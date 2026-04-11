@@ -1,0 +1,5 @@
+{
+  "name": "SlotFiller",
+  "description": "Automatische Terminvergabe per SMS für lokale Dienstleister.",
+  "requestFramePermissions": []
+}

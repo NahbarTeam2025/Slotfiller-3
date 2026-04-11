@@ -1,0 +1,22 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    match /businesses/{businessId} {
+      allow read: if isAuthenticated() && request.auth.uid == businessId;
+      allow create: if isAuthenticated() && request.auth.uid == businessId;
+      allow update: if isAuthenticated() && request.auth.uid == businessId;
+      
+      match /clients/{clientId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == businessId;
+      }
+      
+      match /slots/{slotId} {
+        allow read, write: if isAuthenticated() && request.auth.uid == businessId;
+      }
+    }
+  }
+}
