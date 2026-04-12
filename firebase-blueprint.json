@@ -64,6 +64,27 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["date", "time", "serviceType", "status", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for the business owner.",
+      "type": "object",
+      "properties": {
+        "clientName": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "slotInfo": {
+          "type": "object",
+          "properties": {
+            "date": { "type": "string" },
+            "time": { "type": "string" },
+            "serviceType": { "type": "string" }
+          }
+        },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientName", "message", "type", "read", "timestamp"]
     }
   },
   "firestore": {
@@ -78,6 +99,10 @@
     "/businesses/{businessId}/slots/{slotId}": {
       "schema": { "$ref": "#/entities/Slot" },
       "description": "Stores available slots for a specific business."
+    },
+    "/businesses/{businessId}/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Stores notifications for the business."
     }
   }
 }

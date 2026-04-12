@@ -9,7 +9,7 @@ import { Settings } from "./pages/Settings";
 import { Notes } from "./pages/Notes";
 import { Onboarding } from "./pages/Onboarding";
 import { Calendar } from "./pages/Calendar";
-import { FreeSlots } from "./pages/FreeSlots";
+import { Notifications } from "./pages/Notifications";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, businessId, loading } = useAuth();
@@ -36,7 +36,7 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="calendar" element={<Calendar />} />
-        <Route path="free-slots" element={<FreeSlots />} />
+        <Route path="notifications" element={<Notifications />} />
         <Route path="clients" element={<Clients />} />
         <Route path="notes" element={<Notes />} />
         <Route path="settings" element={<Settings />} />

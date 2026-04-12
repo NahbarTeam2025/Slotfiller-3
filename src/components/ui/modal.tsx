@@ -16,7 +16,6 @@ export function Modal({ isOpen, onClose, title, children, className }: ModalProp
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-      onClick={onClose}
     >
       <div 
         className={cn("relative w-full max-w-lg rounded-xl bg-white dark:bg-slate-900 p-6 shadow-2xl border dark:border-slate-800 max-h-[90vh] overflow-y-auto", className)}

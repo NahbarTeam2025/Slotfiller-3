@@ -26,7 +26,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const businessRef = doc(db, 'businesses', currentUser.uid);
           const businessSnap = await getDoc(businessRef);
           if (businessSnap.exists()) {
-            setBusinessId(currentUser.uid);
+            setBusinessId(businessSnap.id);
           } else {
             setBusinessId(null);
           }

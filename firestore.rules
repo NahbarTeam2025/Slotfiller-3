@@ -1,22 +1,44 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    function isOwner(businessId) {
+      return isAuthenticated() && request.auth.uid == businessId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "Robsta187@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Business Rules
+    // ===============================================================
     match /businesses/{businessId} {
-      allow read: if isAuthenticated() && request.auth.uid == businessId;
-      allow create: if isAuthenticated() && request.auth.uid == businessId;
-      allow update: if isAuthenticated() && request.auth.uid == businessId;
+      allow read, create, update: if isOwner(businessId) || isAdmin();
       
       match /clients/{clientId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == businessId;
+        allow read, write: if isOwner(businessId) || isAdmin();
       }
       
       match /slots/{slotId} {
-        allow read, write: if isAuthenticated() && request.auth.uid == businessId;
+        allow read, write: if isOwner(businessId) || isAdmin();
       }
+
+      match /notifications/{notificationId} {
+        allow read, write: if isOwner(businessId) || isAdmin();
+      }
+    }
+
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
     }
   }
 }

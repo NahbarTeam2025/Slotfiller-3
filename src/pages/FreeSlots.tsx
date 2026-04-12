@@ -6,7 +6,7 @@ import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, addDays } from "date-fns";
-import { Clock, Plus, Users, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Trash2, AlertTriangle } from "lucide-react";
+import { Clock, Plus, Users, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Trash2, AlertTriangle, CheckCircle } from "lucide-react";
 import Holidays from "date-holidays";
 
 export function FreeSlots() {
@@ -44,6 +44,9 @@ export function FreeSlots() {
   const [selectionMode, setSelectionMode] = useState<'ai' | 'manual'>('ai');
   const [allClients, setAllClients] = useState<any[]>([]);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [notificationResult, setNotificationResult] = useState<{ success: boolean, notified: number } | null>(null);
+  const [workerError, setWorkerError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!businessId) return;
@@ -130,7 +133,7 @@ export function FreeSlots() {
 
       // Trigger SMS Notification via Cloudflare Worker
       try {
-        fetch("https://slotfiller-notifier.nahbar.workers.dev", {
+        const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -141,9 +144,17 @@ export function FreeSlots() {
             serviceType: newSlotService,
             manualClients: selectionMode === 'manual' ? selectedClients : undefined
           })
-        }).catch(err => console.error("Worker notification failed", err));
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          setNotificationResult(result);
+          // Auto-close success message after 5 seconds
+          setTimeout(() => setNotificationResult(null), 5000);
+        }
       } catch (workerErr) {
         console.error("Error calling worker", workerErr);
+        setWorkerError("Fehler beim Benachrichtigen der Kunden. Bitte prüfen Sie die Worker-Konfiguration.");
       }
 
       setIsModalOpen(false);
@@ -323,6 +334,30 @@ export function FreeSlots() {
           <p className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-1">Warteliste aktivieren</p>
           <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Freie Plätze</h1>
         </div>
+        
+        {workerError && (
+          <div className="flex-1 max-w-md bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 rounded-lg p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <AlertTriangle className="h-5 w-5 text-red-500" />
+            <div className="text-sm font-medium text-red-800 dark:text-red-300">
+              {workerError}
+            </div>
+            <button onClick={() => setWorkerError(null)} className="ml-auto text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200">
+              <Plus className="h-4 w-4 rotate-45" />
+            </button>
+          </div>
+        )}
+        {notificationResult && (
+          <div className="flex-1 max-w-md bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/30 rounded-lg p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <CheckCircle className="h-5 w-5 text-green-500" />
+            <div className="text-sm font-medium text-green-800 dark:text-green-300">
+              Erfolg! <span className="font-bold">{notificationResult.notified}</span> Kunden wurden benachrichtigt.
+            </div>
+            <button onClick={() => setNotificationResult(null)} className="ml-auto text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-200">
+              <Plus className="h-4 w-4 rotate-45" />
+            </button>
+          </div>
+        )}
+
         <Button 
           onClick={handleOpenModal} 
           className="w-full sm:w-auto bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold px-6 shadow-lg shadow-deep-blue/20 dark:shadow-accent/20"
@@ -525,17 +560,37 @@ export function FreeSlots() {
             </div>
           ) : (
             <div className="space-y-3">
+              <Input 
+                placeholder="Kunden suchen..." 
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
               <div className="flex justify-between items-center">
                 <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">Kunden auswählen ({selectedClients.length})</label>
                 <button 
-                  onClick={() => setSelectedClients(selectedClients.length === allClients.length ? [] : allClients.map(c => c.id))}
+                  onClick={() => {
+                    const available = allClients
+                      .filter(c => !newSlotService || c.serviceTypes?.includes(newSlotService))
+                      .filter(c => 
+                        c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
+                        c.phone?.toLowerCase().includes(clientSearch.toLowerCase())
+                      );
+                    setSelectedClients(selectedClients.length === available.length ? [] : available.map(c => c.id));
+                  }}
                   className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
                 >
-                  {selectedClients.length === allClients.length ? 'Alle abwählen' : 'Alle auswählen'}
+                  {selectedClients.length > 0 ? 'Alle abwählen' : 'Alle auswählen'}
                 </button>
               </div>
               <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
-                {allClients.map(client => (
+                {allClients
+                  .filter(c => !newSlotService || c.serviceTypes?.includes(newSlotService))
+                  .filter(c => 
+                    c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
+                    c.phone?.toLowerCase().includes(clientSearch.toLowerCase())
+                  )
+                  .map(client => (
                   <div 
                     key={client.id}
                     onClick={() => toggleClientSelection(client.id)}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
@@ -22,12 +22,105 @@ const COLORS = [
   { name: 'Lila', bg: 'bg-purple-100 dark:bg-purple-900/30', border: 'border-purple-200 dark:border-purple-800', dot: 'bg-purple-400' },
 ];
 
+interface NoteCardProps {
+  key?: string;
+  note: Note;
+  onSave: (note: Note) => void;
+  onDelete: (id: string) => void;
+}
+
+function NoteCard({ note, onSave, onDelete }: NoteCardProps) {
+  const [text, setText] = useState(note.text);
+  const [color, setColor] = useState(note.color);
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Sync with prop if it changes from DB (optional, but good if another device changes it)
+  useEffect(() => {
+    setText(note.text);
+    setColor(note.color);
+  }, [note.text, note.color]);
+
+  const hasChanged = text !== note.text || color !== note.color;
+
+  const handleSave = () => {
+    onSave({ ...note, text, color });
+    setIsSaved(true);
+    setTimeout(() => setIsSaved(false), 2000);
+  };
+
+  const colorInfo = COLORS.find(c => c.bg === color) || COLORS[0];
+
+  return (
+    <div 
+      className={cn(
+        "group relative flex flex-col rounded-2xl border p-5 transition-all duration-300 hover:shadow-md",
+        color,
+        colorInfo.border
+      )}
+    >
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex gap-1.5">
+          {COLORS.map((c) => (
+            <button
+              key={c.bg}
+              onClick={() => setColor(c.bg)}
+              className={cn(
+                "w-4 h-4 rounded-full border border-black/5 transition-transform hover:scale-125",
+                c.dot,
+                color === c.bg ? "ring-2 ring-offset-1 ring-gray-400 dark:ring-gray-500" : ""
+              )}
+            />
+          ))}
+        </div>
+        <button 
+          onClick={() => onDelete(note.id)}
+          className="text-gray-400 hover:text-red-500 transition-colors p-1"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+      
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Notiz schreiben..."
+        className="flex-1 bg-transparent border-none focus:ring-0 p-0 text-deep-blue dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 resize-none min-h-[150px] text-sm leading-relaxed"
+      />
+      
+      <div className="mt-4 pt-4 border-t border-black/5 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+        <span>{new Date(note.createdAt).toLocaleDateString('de-DE')}</span>
+        <button 
+          onClick={handleSave}
+          disabled={!hasChanged}
+          className={cn(
+            "px-3 py-1 rounded transition-all duration-300 font-bold flex items-center gap-1.5",
+            isSaved 
+              ? "bg-green-500 text-white" 
+              : hasChanged 
+                ? "bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover" 
+                : "bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-gray-600 cursor-not-allowed"
+          )}
+        >
+          {isSaved ? (
+            <>
+              <CheckCircle2 className="w-3 h-3" />
+              Gespeichert
+            </>
+          ) : (
+            "Speichern"
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Notes() {
   const { businessId } = useAuth();
   const [notes, setNotes] = useState<Note[]>([]);
+  const [localNotes, setLocalNotes] = useState<Note[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [noteToDelete, setNoteToDelete] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,38 +129,49 @@ export function Notes() {
     const unsub = onSnapshot(doc(db, "businesses", businessId), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (!isInitialized) {
-          const fetchedNotes = data.notes || [];
-          // Handle migration if notes was a string
-          if (typeof fetchedNotes === 'string') {
-            setNotes([{
-              id: Date.now().toString(),
-              text: fetchedNotes,
-              color: COLORS[0].bg,
-              createdAt: new Date().toISOString()
-            }]);
-          } else {
-            setNotes(fetchedNotes);
-          }
-          setIsInitialized(true);
+        const fetchedNotes = data.notes || [];
+        if (typeof fetchedNotes === 'string') {
+          setNotes([{
+            id: Date.now().toString(),
+            text: fetchedNotes,
+            color: COLORS[0].bg,
+            createdAt: new Date().toISOString()
+          }]);
+        } else {
+          setNotes(fetchedNotes);
         }
       }
     });
 
     return () => unsub();
-  }, [businessId, isInitialized]);
+  }, [businessId]);
 
-  const saveNotes = useCallback(async (updatedNotes: Note[]) => {
+  const saveNote = useCallback(async (updatedNote: Note) => {
     if (!businessId) return;
     setIsSaving(true);
     try {
+      const docSnap = await getDoc(doc(db, "businesses", businessId));
+      const currentNotes = docSnap.data()?.notes || [];
+      
+      let newNotes;
+      const exists = currentNotes.find((n: Note) => n.id === updatedNote.id);
+      if (exists) {
+        newNotes = currentNotes.map((n: Note) => n.id === updatedNote.id ? updatedNote : n);
+      } else {
+        newNotes = [updatedNote, ...currentNotes];
+      }
+
       await updateDoc(doc(db, "businesses", businessId), {
-        notes: updatedNotes
+        notes: newNotes
       });
+      
+      // Remove from localNotes if it was a new note
+      setLocalNotes(prev => prev.filter(n => n.id !== updatedNote.id));
+      
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
     } catch (error) {
-      console.error("Error saving notes:", error);
+      console.error("Error saving note:", error);
     } finally {
       setIsSaving(false);
     }
@@ -80,41 +184,47 @@ export function Notes() {
       color: COLORS[0].bg,
       createdAt: new Date().toISOString()
     };
-    const updated = [newNote, ...notes];
-    setNotes(updated);
-    saveNotes(updated);
-  };
-
-  const updateNoteText = (id: string, text: string) => {
-    const updated = notes.map(n => n.id === id ? { ...n, text } : n);
-    setNotes(updated);
-  };
-
-  const updateNoteColor = (id: string, color: string) => {
-    const updated = notes.map(n => n.id === id ? { ...n, color } : n);
-    setNotes(updated);
-    saveNotes(updated);
+    setLocalNotes(prev => [newNote, ...prev]);
   };
 
   const deleteNote = (id: string) => {
     setNoteToDelete(id);
   };
 
-  const confirmDelete = () => {
-    if (noteToDelete) {
-      const updated = notes.filter(n => n.id !== noteToDelete);
-      setNotes(updated);
-      saveNotes(updated);
-      setNoteToDelete(null);
+  const confirmDelete = async () => {
+    if (noteToDelete && businessId) {
+      // Check if it's a local note
+      if (localNotes.find(n => n.id === noteToDelete)) {
+        setLocalNotes(prev => prev.filter(n => n.id !== noteToDelete));
+        setNoteToDelete(null);
+        return;
+      }
+
+      setIsSaving(true);
+      try {
+        const docSnap = await getDoc(doc(db, "businesses", businessId));
+        const currentNotes = docSnap.data()?.notes || [];
+        const newNotes = currentNotes.filter((n: Note) => n.id !== noteToDelete);
+        
+        await updateDoc(doc(db, "businesses", businessId), {
+          notes: newNotes
+        });
+        setNoteToDelete(null);
+      } catch (error) {
+        console.error("Error deleting note:", error);
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
+
+  const allNotes: Note[] = [...localNotes, ...notes];
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto h-full flex flex-col overflow-hidden">
       <div className="flex justify-between items-center mb-8 shrink-0">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Notizen</h1>
-          <p className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mt-2">Interne Business-Notizen</p>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
@@ -131,7 +241,7 @@ export function Notes() {
       </div>
 
       <div className="flex-1 overflow-y-auto scrollbar-hide pb-20">
-        {notes.length === 0 ? (
+        {allNotes.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-gray-400 dark:text-gray-600">
             <StickyNote className="w-16 h-16 mb-4 opacity-20" />
             <p className="font-medium">Noch keine Notizen vorhanden</p>
@@ -139,54 +249,14 @@ export function Notes() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {notes.map((note) => {
-              const colorInfo = COLORS.find(c => c.bg === note.color) || COLORS[0];
-              return (
-                <div 
-                  key={note.id}
-                  className={cn(
-                    "group relative flex flex-col rounded-2xl border p-5 transition-all duration-300 hover:shadow-md",
-                    note.color,
-                    colorInfo.border
-                  )}
-                >
-                  <div className="flex justify-between items-center mb-4">
-                    <div className="flex gap-1.5">
-                      {COLORS.map((c) => (
-                        <button
-                          key={c.bg}
-                          onClick={() => updateNoteColor(note.id, c.bg)}
-                          className={cn(
-                            "w-4 h-4 rounded-full border border-black/5 transition-transform hover:scale-125",
-                            c.dot,
-                            note.color === c.bg ? "ring-2 ring-offset-1 ring-gray-400 dark:ring-gray-500" : ""
-                          )}
-                        />
-                      ))}
-                    </div>
-                    <button 
-                      onClick={() => deleteNote(note.id)}
-                      className="text-gray-400 hover:text-red-500 transition-colors p-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  
-                  <textarea
-                    value={note.text}
-                    onChange={(e) => updateNoteText(note.id, e.target.value)}
-                    onBlur={() => saveNotes(notes)}
-                    placeholder="Notiz schreiben..."
-                    className="flex-1 bg-transparent border-none focus:ring-0 p-0 text-deep-blue dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 resize-none min-h-[150px] text-sm leading-relaxed"
-                  />
-                  
-                  <div className="mt-4 pt-4 border-t border-black/5 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
-                    <span>{new Date(note.createdAt).toLocaleDateString('de-DE')}</span>
-                    <span className="opacity-0 group-hover:opacity-100 transition-opacity">Auto-Save aktiv</span>
-                  </div>
-                </div>
-              );
-            })}
+            {allNotes.map((note) => (
+              <NoteCard 
+                key={note.id} 
+                note={note} 
+                onSave={saveNote} 
+                onDelete={deleteNote} 
+              />
+            ))}
           </div>
         )}
       </div>

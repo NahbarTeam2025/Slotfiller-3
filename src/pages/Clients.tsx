@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { collection, query, orderBy, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
+import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
@@ -10,6 +11,7 @@ import { Plus, Trash2, Edit2, Clock, AlertTriangle, Search, Filter } from "lucid
 export function Clients() {
   const { businessId } = useAuth();
   const [clients, setClients] = useState<any[]>([]);
+  const [slots, setSlots] = useState<any[]>([]);
   const [business, setBusiness] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -21,6 +23,8 @@ export function Clients() {
   // Search and Filter State
   const [searchQuery, setSearchQuery] = useState(() => localStorage.getItem("clients_searchQuery") || "");
   const [filterService, setFilterService] = useState(() => localStorage.getItem("clients_filterService") || "all");
+  const [filterAppointment, setFilterAppointment] = useState(() => localStorage.getItem("clients_filterAppointment") || "all");
+  const [filterTime, setFilterTime] = useState(() => localStorage.getItem("clients_filterTime") || "all");
 
   useEffect(() => {
     localStorage.setItem("clients_searchQuery", searchQuery);
@@ -30,6 +34,14 @@ export function Clients() {
     localStorage.setItem("clients_filterService", filterService);
   }, [filterService]);
 
+  useEffect(() => {
+    localStorage.setItem("clients_filterAppointment", filterAppointment);
+  }, [filterAppointment]);
+
+  useEffect(() => {
+    localStorage.setItem("clients_filterTime", filterTime);
+  }, [filterTime]);
+
   // Modal State
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -37,28 +49,48 @@ export function Clients() {
   const [selectedTimes, setSelectedTimes] = useState<string[]>([]);
   const [consentGiven, setConsentGiven] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
+  const [selectedClientAppointments, setSelectedClientAppointments] = useState<any[]>([]);
 
   useEffect(() => {
+    console.log("Business ID:", businessId);
     if (!businessId) return;
 
     const unsubBusiness = onSnapshot(doc(db, "businesses", businessId), (docSnap) => {
       if (docSnap.exists()) {
         setBusiness(docSnap.data());
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `businesses/${businessId}`);
     });
 
     const q = query(
-      collection(db, `businesses/${businessId}/clients`),
-      orderBy("createdAt", "desc")
+      collection(db, `businesses/${businessId}/clients`)
     );
     const unsubClients = onSnapshot(q, (snapshot) => {
+      console.log("Snapshot size:", snapshot.size);
       const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log("Clients Data:", clientsData);
       setClients(clientsData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `businesses/${businessId}/clients`);
+    });
+
+    const qSlots = query(
+      collection(db, `businesses/${businessId}/slots`),
+      where("status", "==", "booked")
+    );
+    const unsubSlots = onSnapshot(qSlots, (snapshot) => {
+      const slotsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSlots(slotsData);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `businesses/${businessId}/slots`);
     });
 
     return () => {
       unsubBusiness();
       unsubClients();
+      unsubSlots();
     };
   }, [businessId]);
 
@@ -97,14 +129,20 @@ export function Clients() {
   };
 
   const handleSaveClient = async () => {
-    if (!businessId || !name || !phone || !consentGiven || selectedServices.length === 0) return;
+    if (!businessId || !name || !phone || !consentGiven) return;
     setIsSubmitting(true);
+
+    // Normalize phone number: replace leading 0 with +49
+    let normalizedPhone = phone.trim();
+    if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = '+49' + normalizedPhone.substring(1);
+    }
 
     try {
       if (isEditMode && editingClientId) {
         await updateDoc(doc(db, `businesses/${businessId}/clients`, editingClientId), {
           name,
-          phone,
+          phone: normalizedPhone,
           serviceTypes: selectedServices,
           preferredTimes: selectedTimes,
           consentGiven
@@ -112,13 +150,13 @@ export function Clients() {
       } else {
         await addDoc(collection(db, `businesses/${businessId}/clients`), {
           name,
-          phone,
+          phone: normalizedPhone,
           serviceTypes: selectedServices,
           preferredTimes: selectedTimes,
           consentGiven,
-          consentTimestamp: new Date().toISOString(),
+          consentTimestamp: serverTimestamp(),
           active: true,
-          createdAt: new Date().toISOString()
+          createdAt: serverTimestamp()
         });
       }
       
@@ -147,78 +185,101 @@ export function Clients() {
   };
 
   const filteredClients = clients.filter(client => {
-    const matchesSearch = client.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          client.phone.includes(searchQuery);
-    const matchesService = filterService === "all" || client.serviceTypes.includes(filterService);
-    return matchesSearch && matchesService;
+    const nameStr = client.name || "";
+    const phoneStr = client.phone || "";
+    const matchesSearch = nameStr.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          phoneStr.includes(searchQuery);
+    const matchesService = filterService === "all" || (client.serviceTypes && client.serviceTypes.includes(filterService));
+    const clientAppointments = slots.filter(s => s.bookedBy === nameStr);
+    const hasAppointment = clientAppointments.length > 0;
+    const matchesAppointment = filterAppointment === "all" || 
+                               (filterAppointment === "yes" && hasAppointment) || 
+                               (filterAppointment === "no" && !hasAppointment);
+    const matchesTime = filterTime === "all" || (client.preferredTimes && client.preferredTimes.includes(filterTime));
+    
+    return matchesSearch && matchesService && matchesAppointment && matchesTime;
   });
+  
+  console.log("Clients:", clients);
+  console.log("Filtered Clients:", filteredClients);
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8">
         <div>
-          <p className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-1">Deine Kundenliste</p>
-          <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Alle Kunden</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Kundenliste</h1>
         </div>
         <Button onClick={openAddModal} className="w-full sm:w-auto bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold px-6 shadow-lg shadow-deep-blue/20 dark:shadow-accent/20">
           <Plus className="mr-2 h-5 w-5" /> Kunde hinzufügen
         </Button>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <Input 
-            placeholder="Kunde suchen (Name oder Telefon)..." 
-            className="pl-10 bg-white dark:bg-slate-900 dark:border-slate-800 dark:text-white"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col sm:flex-row gap-4 min-w-[200px]">
-          <div className="relative flex-1 min-w-[200px]">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 pl-10 pr-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent appearance-none"
-              value={filterService}
-              onChange={(e) => setFilterService(e.target.value)}
-            >
-              <option value="all">Alle Dienstleistungen</option>
-              {business?.serviceTypes?.map((service: string) => (
-                <option key={service} value={service}>{service}</option>
-              ))}
-            </select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input 
+              placeholder="Kunde suchen..." 
+              className="pl-10 bg-white dark:bg-slate-900 dark:border-slate-800 dark:text-white"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
-          {(filterService !== "all" || searchQuery !== "") && (
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => {
-                setFilterService("all");
-                setSearchQuery("");
-              }}
-              className="h-10 text-xs font-bold text-gray-500 dark:text-gray-400 dark:border-slate-800 hover:text-deep-blue dark:hover:text-white"
-            >
-              Filter zurücksetzen
-            </Button>
-          )}
+          <select 
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            value={filterService}
+            onChange={(e) => setFilterService(e.target.value)}
+          >
+            <option value="all">Alle Dienstleistungen</option>
+            {business?.serviceTypes?.map((service: string) => (
+              <option key={service} value={service}>{service}</option>
+            ))}
+          </select>
+          <select 
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            value={filterTime}
+            onChange={(e) => setFilterTime(e.target.value)}
+          >
+            <option value="all">Bevorzugte Zeit</option>
+            <option value="Vormittag">Vormittag</option>
+            <option value="Nachmittag">Nachmittag</option>
+            <option value="Abend">Abend</option>
+          </select>
+          <select 
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            value={filterAppointment}
+            onChange={(e) => setFilterAppointment(e.target.value)}
+          >
+            <option value="all">Terminstatus</option>
+            <option value="yes">Termin vorhanden</option>
+            <option value="no">Kein Termin</option>
+          </select>
         </div>
-      </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-          <table className="w-full text-sm text-left">
-            <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-indigo-50 dark:bg-slate-800/50">
+          <table className="w-full text-sm text-left table-fixed">
+            <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-indigo-50 dark:bg-slate-800/50 sticky top-0 z-10">
               <tr>
-                <th className="px-6 py-4 font-medium">Kundenidentität</th>
-                <th className="px-6 py-4 font-medium hidden sm:table-cell">Dienstleistungen</th>
-                <th className="px-6 py-4 font-medium hidden md:table-cell">Bevorzugte Zeit</th>
-                <th className="px-6 py-4 font-medium text-right">Aktion</th>
+                <th className="px-6 py-4 font-medium w-1/4">Kundenidentität</th>
+                <th className="px-6 py-4 font-medium hidden sm:table-cell w-1/5">Dienstleistungen</th>
+                <th className="px-6 py-4 font-medium hidden md:table-cell w-1/6">Bevorzugte Zeit</th>
+                <th className="px-6 py-4 font-medium w-1/6">Termin</th>
+                <th className="px-6 py-4 font-medium text-right w-1/6">Aktion</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
-              {filteredClients.map((client) => (
-                <tr key={client.id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors">
+              {filteredClients.map((client) => {
+                const clientAppointments = slots.filter(s => s.bookedBy === client.name);
+                const hasAppointment = clientAppointments.length > 0;
+                return (
+                <tr 
+                  key={client.id} 
+                  className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                  onClick={() => {
+                    setSelectedClientAppointments(clientAppointments);
+                    setIsAppointmentModalOpen(true);
+                  }}
+                >
                   <td className="px-6 py-4">
                     <div className="font-bold text-deep-blue dark:text-white text-base">{client.name}</div>
                     <div className="text-gray-500 dark:text-gray-400">{client.phone}</div>
@@ -231,7 +292,6 @@ export function Clients() {
                       {client.serviceTypes.length > 2 && <span className="text-[10px] text-gray-400">+{client.serviceTypes.length - 2}</span>}
                     </div>
                     <div className="sm:hidden mt-1 flex items-center text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                      <Clock className="h-3 w-3 mr-1" />
                       {client.preferredTimes.length > 0 ? client.preferredTimes.join(", ") : "Alle Zeiten"}
                     </div>
                   </td>
@@ -246,21 +306,31 @@ export function Clients() {
                   </td>
                   <td className="px-6 py-4 hidden md:table-cell">
                     <div className="flex items-center text-gray-600 dark:text-gray-400 font-medium">
-                      <Clock className="h-4 w-4 mr-2" />
                       {client.preferredTimes.length > 0 ? client.preferredTimes.join(", ") : "Alle Zeiten"}
                     </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${hasAppointment ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400'}`}>
+                      {hasAppointment ? 'Ja' : 'Nein'}
+                    </span>
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
                       <button 
-                        onClick={() => openEditModal(client)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditModal(client);
+                        }}
                         className="text-gray-400 hover:text-deep-blue dark:hover:text-white p-2 transition-colors"
                         title="Bearbeiten"
                       >
                         <Edit2 className="h-4 w-4" />
                       </button>
                       <button 
-                        onClick={() => confirmDelete(client)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmDelete(client);
+                        }}
                         className="text-gray-400 hover:text-red-500 p-2 transition-colors"
                         title="Löschen"
                       >
@@ -269,10 +339,11 @@ export function Clients() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {filteredClients.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                     {clients.length === 0 ? "Keine Kunden vorhanden. Füge deinen ersten Kunden hinzu!" : "Keine Kunden entsprechen den Suchkriterien."}
                   </td>
                 </tr>
@@ -360,7 +431,7 @@ export function Clients() {
             <Button 
               className="flex-1 bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold disabled:opacity-50" 
               onClick={handleSaveClient}
-              disabled={isSubmitting || !name || !phone || !consentGiven || selectedServices.length === 0}
+              disabled={isSubmitting || !name || !phone || !consentGiven}
             >
               {isSubmitting ? "Speichern..." : "Speichern"}
             </Button>
@@ -387,6 +458,41 @@ export function Clients() {
             >
               Endgültig löschen
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isAppointmentModalOpen} onClose={() => setIsAppointmentModalOpen(false)} title="Termindetails">
+        <div className="space-y-4">
+          {selectedClientAppointments.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">Dieser Kunde hat aktuell keine Termine.</p>
+          ) : (
+            <div className="space-y-3">
+              {selectedClientAppointments.map((slot, index) => (
+                <div key={index} className="p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
+                  <div className="font-bold text-deep-blue dark:text-white mb-2">{slot.serviceType}</div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Datum:</span>
+                      <span className="ml-2 font-medium text-gray-900 dark:text-gray-100">{slot.date}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Uhrzeit:</span>
+                      <span className="ml-2 font-medium text-gray-900 dark:text-gray-100">{slot.time} Uhr</span>
+                    </div>
+                    {slot.employeeName && (
+                      <div className="col-span-2">
+                        <span className="text-gray-500 dark:text-gray-400">Mitarbeiter:</span>
+                        <span className="ml-2 font-medium text-gray-900 dark:text-gray-100">{slot.employeeName}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="pt-4">
+            <Button variant="outline" className="w-full dark:border-slate-700 dark:text-white" onClick={() => setIsAppointmentModalOpen(false)}>Schließen</Button>
           </div>
         </div>
       </Modal>
