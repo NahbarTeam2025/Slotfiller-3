@@ -56,6 +56,9 @@ export function Settings() {
     sunday: { open: "08:00", close: "18:00", closed: true },
   });
   const [services, setServices] = useState<string[]>([]);
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [absenceSearch, setAbsenceSearch] = useState("");
   const [newService, setNewService] = useState("");
   const [employees, setEmployees] = useState<any[]>([]);
   const [newEmployeeName, setNewEmployeeName] = useState("");
@@ -300,7 +303,7 @@ export function Settings() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div className="space-y-8">
           {/* Unternehmensprofil */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800 relative">
+          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800 relative">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">Unternehmensprofil</h3>
               {isSaving && <span className="text-[10px] font-bold text-accent animate-pulse uppercase tracking-widest">Speichert...</span>}
@@ -373,7 +376,7 @@ export function Settings() {
           </div>
 
           {/* Kalender Einstellungen */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Kalender Einstellungen</h3>
             <div className="space-y-4">
               <div>
@@ -396,7 +399,7 @@ export function Settings() {
           </div>
 
           {/* Feiertage (Bundesland Auswahl) */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Feiertage</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie Ihr Bundesland aus, um Feiertage automatisch im Kalender anzuzeigen.</p>
             <select 
@@ -428,10 +431,20 @@ export function Settings() {
           </div>
 
           {/* Mitarbeiter Verwalten */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Mitarbeiter</h3>
+            <div className="mb-4">
+              <Input
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                placeholder="Mitarbeiter suchen..."
+                className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white h-9 text-sm"
+              />
+            </div>
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-              {employees.map((emp) => (
+              {employees
+                .filter(emp => emp.name.toLowerCase().includes(employeeSearch.toLowerCase()))
+                .map((emp) => (
                 <div key={emp.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700" onClick={() => handleEditEmployee(emp)}>
                   <span className="font-medium text-deep-blue dark:text-white">{emp.name}</span>
                   <div className="flex items-center gap-2">
@@ -464,10 +477,29 @@ export function Settings() {
           </div>
 
           {/* Abwesenheiten (Urlaub, Krankheit, Feiertage) */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Abwesenheiten (Urlaub, Krankheit)</h3>
+            <div className="mb-4">
+              <Input
+                value={absenceSearch}
+                onChange={(e) => setAbsenceSearch(e.target.value)}
+                placeholder="Abwesenheit suchen..."
+                className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white h-9 text-sm"
+              />
+            </div>
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-              {absences.map((abs) => {
+              {absences
+                .filter(abs => {
+                  const emp = employees.find(e => e.id === abs.employeeId);
+                  const searchLower = absenceSearch.toLowerCase();
+                  return (
+                    emp?.name.toLowerCase().includes(searchLower) ||
+                    abs.type.toLowerCase().includes(searchLower) ||
+                    abs.startDate.includes(searchLower) ||
+                    abs.endDate.includes(searchLower)
+                  );
+                })
+                .map((abs) => {
                 const emp = employees.find(e => e.id === abs.employeeId);
                 return (
                   <div key={abs.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
@@ -521,12 +553,22 @@ export function Settings() {
 
         <div className="space-y-8">
           {/* Dienstleistungen verwalten */}
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">Dienstleistungen verwalten</h3>
             </div>
+            <div className="mb-4">
+              <Input
+                value={serviceSearch}
+                onChange={(e) => setServiceSearch(e.target.value)}
+                placeholder="Dienstleistung suchen..."
+                className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white h-9 text-sm"
+              />
+            </div>
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-              {services.map((service) => (
+              {services
+                .filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase()))
+                .map((service) => (
                 <div key={service} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
                   <span className="font-medium text-deep-blue dark:text-white">{service}</span>
                   <button onClick={() => {
@@ -537,6 +579,9 @@ export function Settings() {
                   </button>
                 </div>
               ))}
+              {services.filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase())).length === 0 && (
+                <div className="text-center py-4 text-xs text-gray-400 uppercase tracking-widest">Keine Dienstleistung gefunden</div>
+              )}
             </div>
             <div className="flex gap-2">
               <Input

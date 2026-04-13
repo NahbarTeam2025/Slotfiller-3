@@ -21,8 +21,8 @@ export function Login() {
   if (loading) return null;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 dark:bg-slate-950 p-4 sm:p-0">
-      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 p-6 sm:p-10 shadow-xl text-center border border-gray-100 dark:border-slate-800">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 dark:bg-black p-4 sm:p-0">
+      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-card-dark p-6 sm:p-10 shadow-xl text-center border border-gray-100 dark:border-slate-800">
         <h1 className="text-4xl font-bold text-deep-blue dark:text-white tracking-tight mb-2">SlotFiller</h1>
         <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-10">Kein Termin bleibt leer.</p>
         

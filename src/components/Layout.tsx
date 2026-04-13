@@ -90,9 +90,9 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-white dark:bg-slate-950 transition-colors duration-300">
+    <div className="flex h-screen bg-white dark:bg-black transition-colors duration-300">
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 z-50">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-card-dark border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-2">
           <div className="bg-accent p-1.5 rounded-lg shadow-sm">
             <Zap className="h-5 w-5 text-deep-blue fill-deep-blue" />
@@ -123,7 +123,7 @@ export function Layout() {
 
       {/* Sidebar (Desktop) */}
       <aside className={`
-        fixed inset-y-0 left-0 z-40 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col transition-all duration-300 lg:translate-x-0 lg:static
+        fixed inset-y-0 left-0 z-40 bg-white dark:bg-card-dark border-r border-gray-200 dark:border-slate-800 flex flex-col transition-all duration-300 lg:translate-x-0 lg:static
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
         ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
       `}>

@@ -64,6 +64,8 @@ export function Calendar() {
   const [slotToDelete, setSlotToDelete] = useState<any>(null);
   const [isManualBooking, setIsManualBooking] = useState(false);
   const [slotToManuallyBook, setSlotToManuallyBook] = useState<any>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!businessId) return;
@@ -153,7 +155,18 @@ export function Calendar() {
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
 
     try {
-      if (isManualBooking && slotToManuallyBook) {
+      if (isEditMode && editingSlotId) {
+        // Update existing slot
+        await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
+          date: newSlotDate,
+          time: newSlotTime,
+          serviceType: newSlotService,
+          employeeId: newSlotEmployee || null,
+          employeeName: employee?.name || "",
+          bookedBy: clientName,
+          updatedAt: new Date().toISOString()
+        });
+      } else if (isManualBooking && slotToManuallyBook) {
         // Update existing slot
         await updateDoc(doc(db, `businesses/${businessId}/slots`, slotToManuallyBook.id), {
           status: "booked",
@@ -192,28 +205,43 @@ export function Calendar() {
         });
       }
 
-      // Delete old future appointments for this client
-      const nowString = format(new Date(), 'yyyy-MM-dd');
-      const existingAppointments = slots.filter(s => 
-        s.status === 'booked' && 
-        s.bookedBy === clientName && 
-        s.date >= nowString &&
-        !(s.date === newSlotDate && s.time === newSlotTime)
-      );
+      // Delete old future appointments for this client (only if not editing)
+      if (!isEditMode) {
+        const nowString = format(new Date(), 'yyyy-MM-dd');
+        const existingAppointments = slots.filter(s => 
+          s.status === 'booked' && 
+          s.bookedBy === clientName && 
+          s.date >= nowString &&
+          !(s.date === newSlotDate && s.time === newSlotTime)
+        );
 
-      for (const oldSlot of existingAppointments) {
-        await deleteDoc(doc(db, `businesses/${businessId}/slots`, oldSlot.id));
+        for (const oldSlot of existingAppointments) {
+          await deleteDoc(doc(db, `businesses/${businessId}/slots`, oldSlot.id));
+        }
       }
 
       setIsModalOpen(false);
-      setClientName("");
       setIsManualBooking(false);
+      setIsEditMode(false);
+      setEditingSlotId(null);
       setSlotToManuallyBook(null);
+      setClientName("");
     } catch (error) {
-      console.error("Error creating booked slot", error);
+      console.error("Error saving booked slot", error);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const openEditModal = (slot: any) => {
+    setEditingSlotId(slot.id);
+    setIsEditMode(true);
+    setNewSlotDate(slot.date);
+    setNewSlotTime(slot.time);
+    setNewSlotService(slot.serviceType);
+    setNewSlotEmployee(slot.employeeId || "");
+    setClientName(slot.bookedBy);
+    setIsModalOpen(true);
   };
 
   const handleCreateFreeSlot = async () => {
@@ -536,7 +564,7 @@ export function Calendar() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Calendar View */}
         <div className="lg:col-span-1">
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
+          <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-deep-blue dark:text-white">{monthName} {year}</h2>
               <div className="flex gap-2">
@@ -559,7 +587,7 @@ export function Calendar() {
 
         {/* Slots List */}
         <div className="lg:col-span-2">
-          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+          <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50">
               <h3 className="text-lg font-bold text-deep-blue dark:text-white">
                 Termine am {format(selectedDate, 'dd.MM.yyyy')}
@@ -596,7 +624,15 @@ export function Calendar() {
                     </div>
                     <div className="flex-1 p-2 space-y-2">
                       {timeSlotsData.map(slot => (
-                        <div key={slot.id} className={`border rounded-lg p-3 flex justify-between items-center shadow-sm group/card ${slot.status === 'booked' ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/20' : 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30'}`}>
+                        <div 
+                          key={slot.id} 
+                          className={`border rounded-lg p-3 flex justify-between items-center shadow-sm group/card cursor-pointer transition-colors ${
+                            slot.status === 'booked' 
+                              ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/20' 
+                              : 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30'
+                          }`}
+                          onClick={() => slot.status === 'booked' && openEditModal(slot)}
+                        >
                           <div>
                             <div className="font-bold text-deep-blue dark:text-white">{slot.status === 'booked' ? slot.bookedBy : 'Kunden benachrichtigt'}</div>
                             <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{slot.serviceType} {slot.employeeName ? `• ${slot.employeeName}` : ''}</div>
@@ -609,7 +645,8 @@ export function Calendar() {
                             ) : (
                               <span 
                                 className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900/50"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSelectedOpenSlot(slot);
                                   setIsNotifiedClientsModalOpen(true);
                                 }}
@@ -621,7 +658,8 @@ export function Calendar() {
                               <Button 
                                 size="sm" 
                                 className="bg-accent text-deep-blue hover:bg-accent-hover font-bold text-xs"
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSlotToManuallyBook(slot);
                                   setIsManualBooking(true);
                                   setNewSlotDate(slot.date);
@@ -634,7 +672,10 @@ export function Calendar() {
                               </Button>
                             )}
                             <button 
-                              onClick={() => confirmDelete(slot)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                confirmDelete(slot);
+                              }}
                               className="text-gray-400 hover:text-red-500 transition-opacity p-1"
                               title={slot.status === 'booked' ? "Termin löschen" : "Meldung zurückziehen"}
                             >
@@ -679,8 +720,20 @@ export function Calendar() {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Gebuchten Termin eintragen">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Tragen Sie hier einen Termin ein, der bereits fest vergeben ist.</p>
+      <Modal isOpen={isModalOpen} onClose={() => {
+        setIsModalOpen(false);
+        setIsManualBooking(false);
+        setIsEditMode(false);
+        setEditingSlotId(null);
+        setSlotToManuallyBook(null);
+      }} title={isEditMode ? "Termin bearbeiten" : (isManualBooking ? "Termin manuell vergeben" : "Gebuchten Termin eintragen")}>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          {isEditMode 
+            ? "Passen Sie die Details des gebuchten Termins an." 
+            : (isManualBooking 
+              ? "Tragen Sie hier den Kunden ein, dem Sie diesen Slot manuell zugewiesen haben." 
+              : "Tragen Sie hier einen Termin ein, der bereits fest vergeben ist.")}
+        </p>
         
         <div className="space-y-6">
           <div>

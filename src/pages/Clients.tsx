@@ -51,6 +51,15 @@ export function Clients() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [selectedClientAppointments, setSelectedClientAppointments] = useState<any[]>([]);
+  const [isDeleteAppointmentModalOpen, setIsDeleteAppointmentModalOpen] = useState(false);
+  const [appointmentToDeleteId, setAppointmentToDeleteId] = useState<string | null>(null);
+  const [isEditSlotModalOpen, setIsEditSlotModalOpen] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<any>(null);
+  const [newSlotDate, setNewSlotDate] = useState("");
+  const [newSlotTime, setNewSlotTime] = useState("");
+  const [newSlotService, setNewSlotService] = useState("");
+  const [newSlotEmployee, setNewSlotEmployee] = useState("");
+  const [isSavingSlot, setIsSavingSlot] = useState(false);
 
   useEffect(() => {
     console.log("Business ID:", businessId);
@@ -104,6 +113,60 @@ export function Clients() {
     setSelectedTimes(prev => 
       prev.includes(time) ? prev.filter(t => t !== time) : [...prev, time]
     );
+  };
+
+  const handleEditSlot = (slot: any) => {
+    setEditingSlot(slot);
+    setNewSlotDate(slot.date);
+    setNewSlotTime(slot.time);
+    setNewSlotService(slot.serviceType);
+    setNewSlotEmployee(slot.employeeId || "");
+    setIsEditSlotModalOpen(true);
+  };
+
+  const handleSaveSlot = async () => {
+    if (!businessId || !editingSlot || !newSlotDate || !newSlotTime || !newSlotService) return;
+    setIsSavingSlot(true);
+
+    try {
+      const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
+      
+      await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlot.id), {
+        date: newSlotDate,
+        time: newSlotTime,
+        serviceType: newSlotService,
+        employeeId: newSlotEmployee || null,
+        employeeName: employee?.name || "",
+        updatedAt: new Date().toISOString()
+      });
+
+      setIsEditSlotModalOpen(false);
+      setEditingSlot(null);
+      // Refresh the selected client appointments if needed
+      // Since we have onSnapshot for slots, it should update automatically
+    } catch (error) {
+      console.error("Error updating slot", error);
+    } finally {
+      setIsSavingSlot(false);
+    }
+  };
+
+  const handleDeleteSlot = async (slotId: string) => {
+    setAppointmentToDeleteId(slotId);
+    setIsDeleteAppointmentModalOpen(true);
+  };
+
+  const confirmDeleteSlot = async () => {
+    if (!businessId || !appointmentToDeleteId) return;
+    try {
+      await deleteDoc(doc(db, `businesses/${businessId}/slots`, appointmentToDeleteId));
+      setIsDeleteAppointmentModalOpen(false);
+      setAppointmentToDeleteId(null);
+      // The list will update automatically via onSnapshot
+      setSelectedClientAppointments(prev => prev.filter(s => s.id !== appointmentToDeleteId));
+    } catch (error) {
+      console.error("Error deleting slot", error);
+    }
   };
 
   const openAddModal = () => {
@@ -219,13 +282,13 @@ export function Clients() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input 
               placeholder="Kunde suchen..." 
-              className="pl-10 bg-white dark:bg-slate-900 dark:border-slate-800 dark:text-white"
+              className="pl-10 bg-white dark:bg-card-dark dark:border-slate-800 dark:text-white"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
           <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
             value={filterService}
             onChange={(e) => setFilterService(e.target.value)}
           >
@@ -235,7 +298,7 @@ export function Clients() {
             ))}
           </select>
           <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
             value={filterTime}
             onChange={(e) => setFilterTime(e.target.value)}
           >
@@ -245,7 +308,7 @@ export function Clients() {
             <option value="Abend">Abend</option>
           </select>
           <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
             value={filterAppointment}
             onChange={(e) => setFilterAppointment(e.target.value)}
           >
@@ -255,7 +318,7 @@ export function Clients() {
           </select>
         </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+      <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
         <div className="overflow-x-auto max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
           <table className="w-full text-sm text-left table-fixed">
             <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-indigo-50 dark:bg-slate-800/50 sticky top-0 z-10">
@@ -469,8 +532,34 @@ export function Clients() {
           ) : (
             <div className="space-y-3">
               {selectedClientAppointments.map((slot, index) => (
-                <div key={index} className="p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700">
-                  <div className="font-bold text-deep-blue dark:text-white mb-2">{slot.serviceType}</div>
+                <div 
+                  key={index} 
+                  className="p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors group"
+                  onClick={() => handleEditSlot(slot)}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="font-bold text-deep-blue dark:text-white">{slot.serviceType}</div>
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditSlot(slot);
+                        }}
+                        className="p-1 text-gray-400 hover:text-accent"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteSlot(slot.id);
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Datum:</span>
@@ -493,6 +582,99 @@ export function Clients() {
           )}
           <div className="pt-4">
             <Button variant="outline" className="w-full dark:border-slate-700 dark:text-white" onClick={() => setIsAppointmentModalOpen(false)}>Schließen</Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal isOpen={isDeleteAppointmentModalOpen} onClose={() => setIsDeleteAppointmentModalOpen(false)} title="Termin löschen">
+        <div className="space-y-6">
+          <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
+            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold mb-1">Möchtest du diesen Termin wirklich löschen?</p>
+              <p className="text-sm opacity-90">
+                Der Termin wird unwiderruflich aus der Datenbank entfernt.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteAppointmentModalOpen(false)}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold" 
+              onClick={confirmDeleteSlot}
+            >
+              Endgültig löschen
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isEditSlotModalOpen} onClose={() => setIsEditSlotModalOpen(false)} title="Termin bearbeiten">
+        <div className="space-y-6">
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Datum</label>
+            <Input 
+              type="date" 
+              value={newSlotDate} 
+              onChange={(e) => setNewSlotDate(e.target.value)}
+              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
+              <Input 
+                type="time" 
+                value={newSlotTime} 
+                onChange={(e) => setNewSlotTime(e.target.value)}
+                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
+              <select 
+                value={newSlotEmployee}
+                onChange={(e) => setNewSlotEmployee(e.target.value)}
+                className="w-full h-10 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white"
+              >
+                <option value="">Kein spezifischer Mitarbeiter</option>
+                {business?.employees?.map((emp: any) => (
+                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistung</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {business?.serviceTypes?.map((service: string) => (
+                <button
+                  key={service}
+                  onClick={() => setNewSlotService(service)}
+                  className={`p-3 rounded-lg text-sm font-medium text-left transition-colors ${
+                    newSlotService === service 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white border-2 border-accent' 
+                      : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {service}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-4 flex flex-col sm:flex-row gap-3">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsEditSlotModalOpen(false)}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold disabled:opacity-50" 
+              onClick={handleSaveSlot}
+              disabled={isSavingSlot || !newSlotDate || !newSlotTime || !newSlotService}
+            >
+              {isSavingSlot ? "Speichern..." : "Speichern"}
+            </Button>
           </div>
         </div>
       </Modal>

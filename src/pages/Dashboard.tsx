@@ -41,6 +41,8 @@ export function Dashboard() {
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [slotToDelete, setSlotToDelete] = useState<any>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
 
   const [isFreeSlotsModalOpen, setIsFreeSlotsModalOpen] = useState(false);
   const [isBookedSlotsModalOpen, setIsBookedSlotsModalOpen] = useState(false);
@@ -86,7 +88,7 @@ export function Dashboard() {
   }, [businessId, newSlotServices, isCreateFreeSlotModalOpen, slots]);
 
   useEffect(() => {
-    setSelectedClients(matchingClients.map(c => c.id));
+    setSelectedClients([]);
   }, [matchingClients]);
 
   useEffect(() => {
@@ -208,55 +210,83 @@ export function Dashboard() {
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
 
     try {
-      // Check if there is an existing open slot at this time
-      const existingOpenSlot = slotsToday.find(s => s.date === newSlotDate && s.time === newSlotTime && s.status === 'open');
-
-      if (existingOpenSlot) {
-        // Update existing open slot to booked
-        await updateDoc(doc(db, `businesses/${businessId}/slots`, existingOpenSlot.id), {
-          status: "booked",
-          bookedBy: clientName,
-          bookedAt: new Date().toISOString(),
-          serviceType: newSlotService,
-          employeeId: newSlotEmployee || null,
-          employeeName: employee?.name || null
-        });
-      } else {
-        // Create new booked slot
-        await addDoc(collection(db, `businesses/${businessId}/slots`), {
+      if (isEditMode && editingSlotId) {
+        // Update existing slot
+        await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
           date: newSlotDate,
           time: newSlotTime,
           serviceType: newSlotService,
           employeeId: newSlotEmployee || null,
           employeeName: employee?.name || "",
-          status: "booked",
-          notifiedClients: [],
           bookedBy: clientName,
-          bookedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString()
+          updatedAt: new Date().toISOString()
         });
+      } else {
+        // Check if there is an existing open slot at this time
+        const existingOpenSlot = slotsToday.find(s => s.date === newSlotDate && s.time === newSlotTime && s.status === 'open');
+
+        if (existingOpenSlot) {
+          // Update existing open slot to booked
+          await updateDoc(doc(db, `businesses/${businessId}/slots`, existingOpenSlot.id), {
+            status: "booked",
+            bookedBy: clientName,
+            bookedAt: new Date().toISOString(),
+            serviceType: newSlotService,
+            employeeId: newSlotEmployee || null,
+            employeeName: employee?.name || null
+          });
+        } else {
+          // Create new booked slot
+          await addDoc(collection(db, `businesses/${businessId}/slots`), {
+            date: newSlotDate,
+            time: newSlotTime,
+            serviceType: newSlotService,
+            employeeId: newSlotEmployee || null,
+            employeeName: employee?.name || "",
+            status: "booked",
+            notifiedClients: [],
+            bookedBy: clientName,
+            bookedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+          });
+        }
       }
 
-      // Delete old future appointments for this client
-      const nowString = format(new Date(), 'yyyy-MM-dd');
-      const existingAppointments = slotsToday.filter(s => 
-        s.status === 'booked' && 
-        s.bookedBy === clientName && 
-        s.date >= nowString &&
-        !(s.date === newSlotDate && s.time === newSlotTime)
-      );
+      // Delete old future appointments for this client (only if not editing or if date/time changed)
+      if (!isEditMode) {
+        const nowString = format(new Date(), 'yyyy-MM-dd');
+        const existingAppointments = slotsToday.filter(s => 
+          s.status === 'booked' && 
+          s.bookedBy === clientName && 
+          s.date >= nowString &&
+          !(s.date === newSlotDate && s.time === newSlotTime)
+        );
 
-      for (const oldSlot of existingAppointments) {
-        await deleteDoc(doc(db, `businesses/${businessId}/slots`, oldSlot.id));
+        for (const oldSlot of existingAppointments) {
+          await deleteDoc(doc(db, `businesses/${businessId}/slots`, oldSlot.id));
+        }
       }
 
       setIsModalOpen(false);
+      setIsEditMode(false);
+      setEditingSlotId(null);
       setClientName("");
     } catch (error) {
-      console.error("Error creating booked slot", error);
+      console.error("Error saving booked slot", error);
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const openEditModal = (slot: any) => {
+    setEditingSlotId(slot.id);
+    setIsEditMode(true);
+    setNewSlotDate(slot.date);
+    setNewSlotTime(slot.time);
+    setNewSlotService(slot.serviceType);
+    setNewSlotEmployee(slot.employeeId || "");
+    setClientName(slot.bookedBy);
+    setIsModalOpen(true);
   };
 
   const handleNotifyMoreClients = async () => {
@@ -474,7 +504,7 @@ export function Dashboard() {
             title="Termine heute" 
             value={futureBookedSlotsToday.length.toString().padStart(2, '0')} 
             icon={<CheckCircle className="h-5 w-5 text-accent" />}
-            className="bg-white dark:bg-slate-900 border-accent/20 h-full"
+            className="bg-white dark:bg-card-dark border-accent/20 h-full"
             valueClassName="text-deep-blue dark:text-white leading-none"
           />
         </div>
@@ -492,7 +522,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col lg:flex-1 lg:min-h-0">
+      <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col lg:flex-1 lg:min-h-0">
         <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50 shrink-0">
           <h3 className="text-lg font-bold text-deep-blue dark:text-white">Heutiger Zeitplan</h3>
           <span className="text-xs font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase">{format(new Date(), 'dd.MM.yyyy')}</span>
@@ -522,7 +552,11 @@ export function Dashboard() {
                 </div>
                 <div className="flex-1 p-2 space-y-2">
                   {bookedSlots.map(slot => (
-                    <div key={slot.id} className="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/30 rounded-lg p-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 shadow-sm group/card">
+                    <div 
+                      key={slot.id} 
+                      className="bg-green-50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/30 rounded-lg p-3 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 shadow-sm group/card cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/20 transition-colors"
+                      onClick={() => openEditModal(slot)}
+                    >
                       <div>
                         <div className="font-bold text-deep-blue dark:text-white text-sm">{slot.bookedBy}</div>
                         <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{slot.serviceType} {slot.employeeName ? `• ${slot.employeeName}` : ''}</div>
@@ -532,7 +566,10 @@ export function Dashboard() {
                           <CheckCircle className="w-3 h-3 mr-1" /> Gebucht
                         </span>
                         <button 
-                          onClick={() => confirmDelete(slot)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            confirmDelete(slot);
+                          }}
                           className="text-gray-400 hover:text-red-500 sm:opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
                           title="Termin löschen"
                         >
@@ -543,9 +580,21 @@ export function Dashboard() {
                   ))}
 
                   {openSlots.map(slot => (
-                    <div key={slot.id} className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/30 rounded-lg p-3 flex justify-between items-center shadow-sm cursor-pointer hover:bg-indigo-100 dark:hover:bg-indigo-900/20" onClick={() => openNotifiedClientsModalForSlot(slot)}>
-                      <div className="font-bold text-indigo-900 dark:text-indigo-300 text-sm">Kunden benachrichtigt</div>
-                      <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/30 px-2 py-1 rounded-full">{slot.notifiedClients?.length || 0} benachrichtigt</span>
+                    <div key={slot.id} className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800/30 rounded-lg p-3 flex justify-between items-center shadow-sm group/card">
+                      <div className="cursor-pointer flex-1" onClick={() => openNotifiedClientsModalForSlot(slot)}>
+                        <div className="font-bold text-indigo-900 dark:text-indigo-300 text-sm">Kunden benachrichtigt</div>
+                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/30 px-2 py-1 rounded-full">{slot.notifiedClients?.length || 0} benachrichtigt</span>
+                      </div>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          confirmDelete(slot);
+                        }}
+                        className="text-gray-400 hover:text-red-500 sm:opacity-0 group-hover/card:opacity-100 transition-opacity p-1 ml-2"
+                        title="Meldung zurückziehen"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
 
@@ -565,9 +614,8 @@ export function Dashboard() {
                       <div 
                         className="flex-1 flex items-center px-3 py-2 text-accent hover:bg-accent/5 cursor-pointer rounded-lg transition-colors border border-dashed border-accent/30 hover:border-accent"
                         onClick={() => {
-                          localStorage.setItem("calendar_selectedDate", new Date().toISOString());
-                          localStorage.setItem("calendar_currentMonth", new Date().toISOString());
-                          navigate('/calendar');
+                          setNewSlotTime(time);
+                          setIsCreateFreeSlotModalOpen(true);
                         }}
                       >
                         <span className="text-xs font-bold flex items-center">
@@ -583,8 +631,16 @@ export function Dashboard() {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Gebuchten Termin eintragen">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Tragen Sie hier einen Termin ein, der bereits fest vergeben ist.</p>
+      <Modal isOpen={isModalOpen} onClose={() => {
+        setIsModalOpen(false);
+        setIsEditMode(false);
+        setEditingSlotId(null);
+      }} title={isEditMode ? "Termin bearbeiten" : "Gebuchten Termin eintragen"}>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+          {isEditMode 
+            ? "Passen Sie die Details des gebuchten Termins an." 
+            : "Tragen Sie hier einen Termin ein, der bereits fest vergeben ist."}
+        </p>
         
         <div className="space-y-6">
           <div>

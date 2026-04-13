@@ -67,8 +67,8 @@ export function Onboarding() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-slate-950 p-4 sm:p-8">
-      <div className="flex flex-col lg:flex-row w-full max-w-5xl mx-auto my-auto bg-white dark:bg-slate-900 rounded-2xl shadow-xl overflow-hidden min-h-[600px] border border-gray-100 dark:border-slate-800">
+    <div className="flex min-h-screen bg-gray-50 dark:bg-black p-4 sm:p-8">
+      <div className="flex flex-col lg:flex-row w-full max-w-5xl mx-auto my-auto bg-white dark:bg-card-dark rounded-2xl shadow-xl overflow-hidden min-h-[600px] border border-gray-100 dark:border-slate-800">
         {/* Left Side */}
         <div className="w-full lg:w-1/2 bg-deep-blue p-8 sm:p-12 flex flex-col justify-between text-white relative overflow-hidden">
           <div className="relative z-10">

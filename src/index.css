@@ -19,6 +19,7 @@
   --color-success-green: #10b981;
   --color-success-green-hover: #059669;
   --color-brand-blue: #3b82f6;
+  --color-card-dark: #1E1F20;
 }
 
 @layer base {
@@ -28,6 +29,6 @@
   }
 
   .dark body {
-    @apply bg-slate-950 text-slate-100;
+    @apply bg-black text-slate-100;
   }
 }
