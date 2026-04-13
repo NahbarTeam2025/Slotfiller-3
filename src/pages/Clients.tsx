@@ -560,14 +560,14 @@ export function Clients() {
                       </button>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Datum:</span>
-                      <span className="ml-2 font-medium text-gray-900 dark:text-gray-100">{slot.date}</span>
+                  <div className="flex flex-col gap-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 dark:text-gray-400 w-16 shrink-0">Datum:</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{slot.date}</span>
                     </div>
-                    <div>
-                      <span className="text-gray-500 dark:text-gray-400">Uhrzeit:</span>
-                      <span className="ml-2 font-medium text-gray-900 dark:text-gray-100">{slot.time} Uhr</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500 dark:text-gray-400 w-16 shrink-0">Uhrzeit:</span>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">{slot.time} Uhr</span>
                     </div>
                     {slot.employeeName && (
                       <div className="col-span-2">

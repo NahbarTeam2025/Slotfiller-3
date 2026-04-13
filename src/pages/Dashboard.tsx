@@ -44,6 +44,10 @@ export function Dashboard() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
 
+  const [notifiedFilterEmployee, setNotifiedFilterEmployee] = useState("");
+  const [notifiedFilterClient, setNotifiedFilterClient] = useState("");
+  const [notifiedFilterDate, setNotifiedFilterDate] = useState("");
+
   const [isFreeSlotsModalOpen, setIsFreeSlotsModalOpen] = useState(false);
   const [isBookedSlotsModalOpen, setIsBookedSlotsModalOpen] = useState(false);
   const [bookedFilterEmployee, setBookedFilterEmployee] = useState("");
@@ -468,8 +472,18 @@ export function Dashboard() {
         slot: slot 
       };
     }) || []);
+    setNotifiedFilterEmployee("");
+    setNotifiedFilterClient("");
+    setNotifiedFilterDate("");
     setIsNotifiedClientsModalOpen(true);
   };
+
+  const filteredNotifiedClients = notifiedClientsDetails.filter(item => {
+    const matchesEmployee = !notifiedFilterEmployee || item.slot.employeeName?.toLowerCase().includes(notifiedFilterEmployee.toLowerCase());
+    const matchesClient = !notifiedFilterClient || item.clientName.toLowerCase().includes(notifiedFilterClient.toLowerCase());
+    const matchesDate = !notifiedFilterDate || item.slot.date === notifiedFilterDate;
+    return matchesEmployee && matchesClient && matchesDate;
+  });
 
   return (
     <div className="p-4 sm:p-8 max-w-7xl mx-auto lg:h-full lg:flex lg:flex-col lg:overflow-hidden">
@@ -565,16 +579,28 @@ export function Dashboard() {
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
                           <CheckCircle className="w-3 h-3 mr-1" /> Gebucht
                         </span>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            confirmDelete(slot);
-                          }}
-                          className="text-gray-400 hover:text-red-500 sm:opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
-                          title="Termin löschen"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1 sm:opacity-0 group-hover/card:opacity-100 transition-opacity">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditModal(slot);
+                            }}
+                            className="text-gray-400 hover:text-accent p-1"
+                            title="Termin bearbeiten"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmDelete(slot);
+                            }}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                            title="Termin löschen"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -748,15 +774,38 @@ export function Dashboard() {
 
       <Modal isOpen={isNotifiedClientsModalOpen} onClose={() => setIsNotifiedClientsModalOpen(false)} title="Benachrichtigte Kunden">
         <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <Input 
+              placeholder="Mitarbeiter..." 
+              value={notifiedFilterEmployee}
+              onChange={(e) => setNotifiedFilterEmployee(e.target.value)}
+              className="h-9 text-sm"
+            />
+            <Input 
+              placeholder="Kunde..." 
+              value={notifiedFilterClient}
+              onChange={(e) => setNotifiedFilterClient(e.target.value)}
+              className="h-9 text-sm"
+            />
+            <Input 
+              type="date"
+              value={notifiedFilterDate}
+              onChange={(e) => setNotifiedFilterDate(e.target.value)}
+              className="h-9 text-sm"
+            />
+          </div>
           <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {notifiedClientsDetails.length === 0 ? (
-              <p className="text-sm text-gray-500">Keine Kunden benachrichtigt.</p>
+            {filteredNotifiedClients.length === 0 ? (
+              <p className="text-sm text-gray-500">Keine Kunden gefunden.</p>
             ) : (
-              notifiedClientsDetails.map((item, index) => (
-                <div key={index} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-slate-800 rounded-lg">
+              filteredNotifiedClients.map((item, index) => (
+                <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="font-bold text-deep-blue dark:text-white">{item.clientName}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{item.slot.serviceType} am {item.slot.date} um {item.slot.time}</p>
+                    <p className="font-bold text-deep-blue">{item.clientName}</p>
+                    <p className="text-xs text-gray-500">
+                      {item.slot.serviceType} am {item.slot.date} um {item.slot.time}
+                      {item.slot.employeeName && ` bei ${item.slot.employeeName}`}
+                    </p>
                   </div>
                 </div>
               ))
@@ -896,29 +945,6 @@ export function Dashboard() {
               disabled={isSubmitting || additionalClients.length === 0}
             >
               {isSubmitting ? "Wird gesendet..." : "Jetzt benachrichtigen"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Termin löschen">
-        <div className="space-y-6">
-          <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold mb-1">Möchtest du diesen Termin wirklich löschen?</p>
-              <p className="text-sm opacity-90">
-                Der Termin am {slotToDelete?.date} um {slotToDelete?.time} Uhr für {slotToDelete?.bookedBy} wird unwiderruflich entfernt.
-              </p>
-            </div>
-          </div>
-          <div className="pt-4 flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" 
-              onClick={handleDeleteSlot}
-            >
-              Endgültig löschen
             </Button>
           </div>
         </div>
@@ -1151,13 +1177,25 @@ export function Dashboard() {
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
                             <CheckCircle className="w-3 h-3 mr-1" /> Gebucht
                           </span>
-                          <button 
-                            onClick={() => confirmDelete(slot)}
-                            className="text-gray-400 hover:text-red-500 sm:opacity-0 group-hover/card:opacity-100 transition-opacity p-1"
-                            title="Termin löschen"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1 sm:opacity-0 group-hover/card:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => {
+                                setIsBookedSlotsModalOpen(false);
+                                openEditModal(slot);
+                              }}
+                              className="text-gray-400 hover:text-accent p-1"
+                              title="Termin bearbeiten"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => confirmDelete(slot)}
+                              className="text-gray-400 hover:text-red-500 p-1"
+                              title="Termin löschen"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1180,6 +1218,29 @@ export function Dashboard() {
                 <p className="text-sm font-medium text-gray-400 dark:text-gray-500">Keine Termine für die gewählten Filter gefunden.</p>
               </div>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Termin löschen">
+        <div className="space-y-6">
+          <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
+            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold mb-1">Möchtest du diesen Termin wirklich löschen?</p>
+              <p className="text-sm opacity-90">
+                Der Termin am {slotToDelete?.date} um {slotToDelete?.time} Uhr für {slotToDelete?.bookedBy} wird unwiderruflich entfernt.
+              </p>
+            </div>
+          </div>
+          <div className="pt-4 flex flex-col sm:flex-row gap-3">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteModalOpen(false)}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" 
+              onClick={handleDeleteSlot}
+            >
+              Endgültig löschen
+            </Button>
           </div>
         </div>
       </Modal>

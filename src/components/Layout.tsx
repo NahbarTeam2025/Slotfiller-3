@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { de } from "date-fns/locale";
 import { Modal } from "./ui/modal";
 import { Button } from "./ui/button";
+import { cn } from "../lib/utils";
 
 export function Layout() {
   const { user, businessId } = useAuth();
@@ -31,27 +32,6 @@ export function Layout() {
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', isSidebarCollapsed.toString());
   }, [isSidebarCollapsed]);
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'dark') {
-      setIsDarkMode(true);
-      document.documentElement.classList.add('dark');
-    } else if (savedTheme === 'light') {
-      setIsDarkMode(false);
-      document.documentElement.classList.remove('dark');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDarkMode]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -90,10 +70,16 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-white dark:bg-black transition-colors duration-300">
+    <div className="flex h-screen bg-white transition-colors duration-300">
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-card-dark border-b border-gray-200 dark:border-slate-800 flex items-center justify-between px-4 z-50">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 text-gray-600"
+          >
+            {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </button>
           <div className="bg-accent p-1.5 rounded-lg shadow-sm">
             <Zap className="h-5 w-5 text-deep-blue fill-deep-blue" />
           </div>
@@ -108,22 +94,19 @@ export function Layout() {
                 navigate('/notes');
               }
             }}
-            className="p-2 text-gray-600 dark:text-gray-400"
+            className="p-2 text-gray-600"
           >
             <StickyNote className="h-6 w-6" />
           </button>
-          <button 
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 text-gray-600 dark:text-gray-400"
-          >
-            {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          <div className="w-8 h-8 rounded-full bg-deep-blue flex items-center justify-center text-white text-xs font-bold">
+            {user?.email?.charAt(0).toUpperCase()}
+          </div>
         </div>
       </div>
 
       {/* Sidebar (Desktop) */}
       <aside className={`
-        fixed inset-y-0 left-0 z-40 bg-white dark:bg-card-dark border-r border-gray-200 dark:border-slate-800 flex flex-col transition-all duration-300 lg:translate-x-0 lg:static
+        fixed inset-y-0 left-0 z-40 bg-white border-r border-gray-200 flex flex-col transition-all duration-300 lg:translate-x-0 lg:static
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
         ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
       `}>
@@ -132,15 +115,15 @@ export function Layout() {
             <div className="bg-accent p-1.5 rounded-lg shadow-lg shadow-accent/20 shrink-0">
               <Zap className="h-4 w-4 text-deep-blue fill-deep-blue" />
             </div>
-            {!isSidebarCollapsed && <span className="text-xs font-black tracking-[0.2em] text-brand-blue uppercase">SlotFiller</span>}
+            {!isSidebarCollapsed && <span className="text-xs font-black tracking-[0.2em] text-brand-blue uppercase transition-opacity duration-300">SlotFiller</span>}
           </div>
           {!isSidebarCollapsed && (
-            <>
-              <h1 className="text-2xl font-bold text-deep-blue dark:text-white tracking-tight">{businessName}</h1>
-              <div className="text-xs font-bold text-gray-400 dark:text-gray-500 mt-2 uppercase tracking-widest">
+            <div className="transition-opacity duration-300">
+              <h1 className="text-2xl font-bold text-deep-blue tracking-tight">{businessName}</h1>
+              <div className="text-xs font-bold text-gray-400 mt-2 uppercase tracking-widest">
                 {format(currentTime, "dd.MM.yyyy - HH:mm", { locale: de })} Uhr
               </div>
-            </>
+            </div>
           )}
         </div>
         
@@ -152,13 +135,18 @@ export function Layout() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 dark:bg-indigo-900/20 text-deep-blue dark:text-accent border-l-4 border-accent" 
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-deep-blue dark:hover:text-white"
+                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
+                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
               }`
             }
           >
             <LayoutDashboard className="h-5 w-5 shrink-0" />
-            {!isSidebarCollapsed && <span>Übersicht</span>}
+            <span className={cn(
+              "transition-all duration-300 whitespace-nowrap overflow-hidden",
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+            )}>
+              Übersicht
+            </span>
           </NavLink>
           <NavLink
             to="/calendar"
@@ -167,13 +155,18 @@ export function Layout() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 dark:bg-indigo-900/20 text-deep-blue dark:text-accent border-l-4 border-accent" 
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-deep-blue dark:hover:text-white"
+                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
+                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
               }`
             }
           >
             <Calendar className="h-5 w-5 shrink-0" />
-            {!isSidebarCollapsed && <span>Kalender</span>}
+            <span className={cn(
+              "transition-all duration-300 whitespace-nowrap overflow-hidden",
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+            )}>
+              Kalender
+            </span>
           </NavLink>
           <NavLink
             to="/notifications"
@@ -182,14 +175,19 @@ export function Layout() {
             className={({ isActive }) =>
               `flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 dark:bg-indigo-900/20 text-deep-blue dark:text-accent border-l-4 border-accent" 
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-deep-blue dark:hover:text-white"
+                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
+                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
               }`
             }
           >
             <div className="flex items-center gap-3">
               <Bell className="h-5 w-5 shrink-0" />
-              {!isSidebarCollapsed && <span>Benachrichtigungen</span>}
+              <span className={cn(
+                "transition-all duration-300 whitespace-nowrap overflow-hidden",
+                isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+              )}>
+                Benachrichtigungen
+              </span>
             </div>
             {!isSidebarCollapsed && unreadNotifications > 0 && (
               <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
@@ -207,13 +205,18 @@ export function Layout() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 dark:bg-indigo-900/20 text-deep-blue dark:text-accent border-l-4 border-accent" 
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-deep-blue dark:hover:text-white"
+                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
+                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
               }`
             }
           >
             <Users className="h-5 w-5 shrink-0" />
-            {!isSidebarCollapsed && <span>Kunden</span>}
+            <span className={cn(
+              "transition-all duration-300 whitespace-nowrap overflow-hidden",
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+            )}>
+              Kunden
+            </span>
           </NavLink>
           <NavLink
             to="/notes"
@@ -222,13 +225,18 @@ export function Layout() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 dark:bg-indigo-900/20 text-deep-blue dark:text-accent border-l-4 border-accent" 
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-deep-blue dark:hover:text-white"
+                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
+                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
               }`
             }
           >
             <StickyNote className="h-5 w-5 shrink-0" />
-            {!isSidebarCollapsed && <span>Notizen</span>}
+            <span className={cn(
+              "transition-all duration-300 whitespace-nowrap overflow-hidden",
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+            )}>
+              Notizen
+            </span>
           </NavLink>
           <NavLink
             to="/settings"
@@ -237,40 +245,37 @@ export function Layout() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 dark:bg-indigo-900/20 text-deep-blue dark:text-accent border-l-4 border-accent" 
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-deep-blue dark:hover:text-white"
+                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
+                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
               }`
             }
           >
             <Settings className="h-5 w-5 shrink-0" />
-            {!isSidebarCollapsed && <span>Einstellungen</span>}
+            <span className={cn(
+              "transition-all duration-300 whitespace-nowrap overflow-hidden",
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+            )}>
+              Einstellungen
+            </span>
           </NavLink>
         </nav>
 
-        <div className={`p-4 border-t border-gray-200 dark:border-slate-800 space-y-2 ${isSidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
+        <div className={`p-4 border-t border-gray-200 space-y-2 ${isSidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
           <button 
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="hidden lg:flex items-center gap-3 px-4 py-3 w-full text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg transition-colors text-sm font-bold"
+            className="hidden lg:flex items-center gap-3 px-4 py-3 w-full text-gray-600 hover:bg-gray-50 rounded-lg transition-colors text-sm font-bold"
             title={isSidebarCollapsed ? "Menü aufklappen" : "Menü zuklappen"}
           >
             {isSidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-            {!isSidebarCollapsed && <span>Menü zuklappen</span>}
-          </button>
-          <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
-            className={`flex items-center gap-3 px-4 py-3 w-full text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-slate-800 rounded-lg transition-colors text-sm font-bold ${isSidebarCollapsed ? 'justify-center w-12' : ''}`}
-            title={isSidebarCollapsed ? (isDarkMode ? 'Light Mode' : 'Dark Mode') : ""}
-          >
-            {isDarkMode ? <Sun className="h-5 w-5 shrink-0" /> : <Moon className="h-5 w-5 shrink-0" />}
-            {!isSidebarCollapsed && <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>}
+            {!isSidebarCollapsed && <span className="transition-opacity duration-300">Menü zuklappen</span>}
           </button>
           <button 
             onClick={() => setIsLogoutModalOpen(true)} 
-            className={`flex items-center gap-3 px-4 py-3 w-full text-gray-600 dark:text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-lg transition-colors text-sm font-bold ${isSidebarCollapsed ? 'justify-center w-12' : ''}`}
+            className={`flex items-center gap-3 px-4 py-3 w-full text-gray-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors text-sm font-bold ${isSidebarCollapsed ? 'justify-center w-12' : ''}`}
             title={isSidebarCollapsed ? "Ausloggen" : ""}
           >
             <LogOut className="h-5 w-5 shrink-0" />
-            {!isSidebarCollapsed && <span>Ausloggen</span>}
+            {!isSidebarCollapsed && <span className="transition-opacity duration-300">Ausloggen</span>}
           </button>
         </div>
       </aside>
@@ -292,9 +297,9 @@ export function Layout() {
 
       <Modal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} title="Ausloggen">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">Sind Sie sicher, dass Sie sich ausloggen möchten?</p>
+          <p className="text-sm text-gray-600">Sind Sie sicher, dass Sie sich ausloggen möchten?</p>
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsLogoutModalOpen(false)}>Abbrechen</Button>
+            <Button variant="outline" className="flex-1" onClick={() => setIsLogoutModalOpen(false)}>Abbrechen</Button>
             <Button className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" onClick={handleLogout}>Ausloggen</Button>
           </div>
         </div>

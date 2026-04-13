@@ -619,25 +619,25 @@ export function Calendar() {
                 
                 return (
                   <div key={time} className="flex border-b border-gray-100 dark:border-slate-800 min-h-[70px]">
-                    <div className="w-24 py-4 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right bg-gray-50/50 dark:bg-slate-800/20">
+                    <div className="w-16 sm:w-24 py-4 px-2 sm:px-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right bg-gray-50/50 dark:bg-slate-800/20">
                       {time}
                     </div>
                     <div className="flex-1 p-2 space-y-2">
                       {timeSlotsData.map(slot => (
                         <div 
                           key={slot.id} 
-                          className={`border rounded-lg p-3 flex justify-between items-center shadow-sm group/card cursor-pointer transition-colors ${
+                          className={`border rounded-lg p-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm group/card cursor-pointer transition-colors ${
                             slot.status === 'booked' 
                               ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/20' 
                               : 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30'
                           }`}
                           onClick={() => slot.status === 'booked' && openEditModal(slot)}
                         >
-                          <div>
-                            <div className="font-bold text-deep-blue dark:text-white">{slot.status === 'booked' ? slot.bookedBy : 'Kunden benachrichtigt'}</div>
-                            <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{slot.serviceType} {slot.employeeName ? `• ${slot.employeeName}` : ''}</div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-bold text-deep-blue dark:text-white truncate">{slot.status === 'booked' ? slot.bookedBy : 'Kunden benachrichtigt'}</div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">{slot.serviceType} {slot.employeeName ? `• ${slot.employeeName}` : ''}</div>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
                             {slot.status === 'booked' ? (
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
                                 <CheckCircle className="w-3 h-3 mr-1" /> Gebucht

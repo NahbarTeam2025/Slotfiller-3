@@ -19,16 +19,11 @@
   --color-success-green: #10b981;
   --color-success-green-hover: #059669;
   --color-brand-blue: #3b82f6;
-  --color-card-dark: #1E1F20;
 }
 
 @layer base {
   body {
     font-family: var(--font-sans);
     @apply bg-white text-deep-blue transition-colors duration-300;
-  }
-
-  .dark body {
-    @apply bg-black text-slate-100;
   }
 }
