@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, addDays } from "date-fns";
-import { Calendar as CalendarIcon, Plus, CheckCircle, ChevronLeft, ChevronRight, Clock, Trash2, AlertTriangle, Users } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, CheckCircle, ChevronLeft, ChevronRight, Clock, Trash2, AlertTriangle, Users, ChevronDown } from "lucide-react";
 import Holidays from "date-holidays";
 
 export function Calendar() {
@@ -44,6 +44,8 @@ export function Calendar() {
   const [clients, setClients] = useState<any[]>([]);
   const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCustomService, setIsCustomService] = useState(false);
+  const [customService, setCustomService] = useState("");
 
   // Modal State (Free Slot)
   const [matchingClients, setMatchingClients] = useState<any[]>([]);
@@ -53,12 +55,16 @@ export function Calendar() {
   const [notificationResult, setNotificationResult] = useState<{ success: boolean, notified: number } | null>(null);
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [newSlotServices, setNewSlotServices] = useState<string[]>([]);
+  const [isCustomFreeService, setIsCustomFreeService] = useState(false);
+  const [customFreeService, setCustomFreeService] = useState("");
 
   const [isNotifiedClientsModalOpen, setIsNotifiedClientsModalOpen] = useState(false);
   const [selectedOpenSlot, setSelectedOpenSlot] = useState<any>(null);
   const [isNotifyMoreModalOpen, setIsNotifyMoreModalOpen] = useState(false);
   const [additionalClients, setAdditionalClients] = useState<string[]>([]);
   const [additionalServiceType, setAdditionalServiceType] = useState<string>("");
+  const [isCustomNotifyService, setIsCustomNotifyService] = useState(false);
+  const [customNotifyService, setCustomNotifyService] = useState("");
   const [additionalEmployeeId, setAdditionalEmployeeId] = useState<string>("");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [slotToDelete, setSlotToDelete] = useState<any>(null);
@@ -66,6 +72,10 @@ export function Calendar() {
   const [slotToManuallyBook, setSlotToManuallyBook] = useState<any>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  const [isSlotServiceDropdownOpen, setIsSlotServiceDropdownOpen] = useState(false);
+  const [slotServiceSearch, setSlotServiceSearch] = useState("");
+  const [isSlotEmployeeDropdownOpen, setIsSlotEmployeeDropdownOpen] = useState(false);
+  const [slotEmployeeSearch, setSlotEmployeeSearch] = useState("");
 
   useEffect(() => {
     if (!businessId) return;
@@ -74,12 +84,6 @@ export function Calendar() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setBusiness(data);
-        if (data.serviceTypes?.length > 0 && !newSlotService) {
-          setNewSlotService(data.serviceTypes[0]);
-        }
-        if (data.employees?.length > 0 && !newSlotEmployee) {
-          setNewSlotEmployee(data.employees[0].id);
-        }
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, `businesses/${businessId}`);
@@ -137,8 +141,7 @@ export function Calendar() {
         const filteredClients = allActiveClients.filter((client: any) => {
           const matchesService = newSlotServices.length === 0 || 
             client.serviceTypes?.some((s: string) => newSlotServices.includes(s));
-          const isNotBooked = !futureBookedClients.includes(client.name);
-          return matchesService && isNotBooked;
+          return matchesService;
         });
 
         setMatchingClients(filteredClients);
@@ -149,7 +152,8 @@ export function Calendar() {
   }, [businessId, newSlotServices, isFreeSlotModalOpen, slots]);
 
   const handleCreateBookedSlot = async () => {
-    if (!businessId || !newSlotDate || !newSlotTime || !newSlotService || !clientName) return;
+    const finalService = isCustomService && customService.trim() ? customService.trim() : newSlotService;
+    if (!businessId || !newSlotDate || !newSlotTime || !finalService || !clientName) return;
     setIsSubmitting(true);
 
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
@@ -160,7 +164,7 @@ export function Calendar() {
         await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
           date: newSlotDate,
           time: newSlotTime,
-          serviceType: newSlotService,
+          serviceType: finalService,
           employeeId: newSlotEmployee || null,
           employeeName: employee?.name || "",
           bookedBy: clientName,
@@ -194,7 +198,7 @@ export function Calendar() {
         await addDoc(collection(db, `businesses/${businessId}/slots`), {
           date: newSlotDate,
           time: newSlotTime,
-          serviceType: newSlotService,
+          serviceType: finalService,
           employeeId: newSlotEmployee || null,
           employeeName: employee?.name || "",
           status: "booked",
@@ -226,6 +230,8 @@ export function Calendar() {
       setEditingSlotId(null);
       setSlotToManuallyBook(null);
       setClientName("");
+      setIsCustomService(false);
+      setCustomService("");
     } catch (error) {
       console.error("Error saving booked slot", error);
     } finally {
@@ -245,14 +251,18 @@ export function Calendar() {
   };
 
   const handleCreateFreeSlot = async () => {
-    if (!businessId || !newSlotDate || !newSlotTime || newSlotServices.length === 0) return;
+    const finalServices = isCustomFreeService && customFreeService.trim() 
+      ? [...newSlotServices, customFreeService.trim()]
+      : newSlotServices;
+
+    if (!businessId || !newSlotDate || !newSlotTime || finalServices.length === 0) return;
     setIsSubmitting(true);
 
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
     
     let serviceTypeString = "";
-    if (newSlotServices && newSlotServices.length > 0) {
-      serviceTypeString = newSlotServices.join(", ");
+    if (finalServices && finalServices.length > 0) {
+      serviceTypeString = finalServices.join(", ");
     }
     if (employee) {
       serviceTypeString += serviceTypeString ? ` bei ${employee.name}` : `Bei ${employee.name}`;
@@ -298,6 +308,8 @@ export function Calendar() {
       }
 
       setIsFreeSlotModalOpen(false);
+      setIsCustomFreeService(false);
+      setCustomFreeService("");
     } catch (error) {
       console.error("Error creating free slot", error);
     } finally {
@@ -306,14 +318,18 @@ export function Calendar() {
   };
 
   const handleNotifyMoreClients = async () => {
+    const finalServices = isCustomNotifyService && customNotifyService.trim() 
+      ? (additionalServiceType ? additionalServiceType.split(', ') : []).concat(customNotifyService.trim()).join(', ')
+      : additionalServiceType;
+
     if (!businessId || !selectedOpenSlot || additionalClients.length === 0) return;
     setIsSubmitting(true);
 
     const employee = additionalEmployeeId ? business?.employees?.find((e: any) => e.id === additionalEmployeeId) : null;
     
     let serviceTypeString = "";
-    if (additionalServiceType) {
-      serviceTypeString = additionalServiceType;
+    if (finalServices) {
+      serviceTypeString = finalServices;
     }
     if (employee) {
       serviceTypeString += serviceTypeString ? ` bei ${employee.name}` : `Bei ${employee.name}`;
@@ -352,6 +368,8 @@ export function Calendar() {
     } finally {
       setIsSubmitting(false);
       setIsNotifyMoreModalOpen(false);
+      setIsCustomNotifyService(false);
+      setCustomNotifyService("");
     }
   };
 
@@ -749,45 +767,149 @@ export function Calendar() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotTime}
-                onChange={(e) => setNewSlotTime(e.target.value)}
-              >
+              <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
                 {generateTimeSlots().map((time) => (
-                  <option key={time} value={time}>{time}</option>
+                  <button
+                    key={time}
+                    onClick={() => setNewSlotTime(time)}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotTime === time 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {time}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotEmployee}
-                onChange={(e) => setNewSlotEmployee(e.target.value)}
+            <div className="relative">
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
+              <button
+                type="button"
+                onClick={() => setIsSlotServiceDropdownOpen(!isSlotServiceDropdownOpen)}
+                className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white mb-2"
               >
-                <option value="">Kein Mitarbeiter ausgewählt</option>
-                {business?.employees?.map((emp: any) => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
-                ))}
-              </select>
+                <span>{isCustomService ? "Individuell..." : (newSlotService || "Dienstleistung auswählen")}</span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${isSlotServiceDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isSlotServiceDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-[220px] flex flex-col">
+                  <div className="p-2 border-b border-gray-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-20">
+                    <Input
+                      placeholder="Dienstleistung suchen..."
+                      value={slotServiceSearch}
+                      onChange={(e) => setSlotServiceSearch(e.target.value)}
+                      className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin">
+                  {[...business?.serviceTypes || []]
+                    .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((service: string) => (
+                    <button
+                      key={service}
+                      onClick={() => {
+                        setIsCustomService(false);
+                        setNewSlotService(service);
+                        setIsSlotServiceDropdownOpen(false);
+                        setSlotServiceSearch("");
+                      }}
+                      className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                        !isCustomService && newSlotService === service 
+                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {service}
+                    </button>
+                  ))}
+                  </div>
+                  <div className="p-2 border-t border-gray-100 dark:border-slate-700 sticky bottom-0 bg-white dark:bg-slate-800 z-20">
+                    <button
+                      onClick={() => {
+                        setIsCustomService(true);
+                        setIsSlotServiceDropdownOpen(false);
+                        setSlotServiceSearch("");
+                      }}
+                      className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                        isCustomService 
+                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Individuell...
+                    </button>
+                  </div>
+                </div>
+              )}
+              {isCustomService && (
+                <Input 
+                  placeholder="Eigene Dienstleistung..." 
+                  value={customService}
+                  onChange={(e) => setCustomService(e.target.value)}
+                  className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                />
+              )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotService}
-                onChange={(e) => setNewSlotService(e.target.value)}
-              >
-                {business?.serviceTypes?.map((service: string) => (
-                  <option key={service} value={service}>{service}</option>
+          <div className="relative">
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
+            <button
+              type="button"
+              onClick={() => setIsSlotEmployeeDropdownOpen(!isSlotEmployeeDropdownOpen)}
+              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white"
+            >
+              <span>{newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee)?.name : "Kein Mitarbeiter ausgewählt"}</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${isSlotEmployeeDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isSlotEmployeeDropdownOpen && (
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-[220px] flex flex-col">
+                <div className="p-2 border-b border-gray-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-20">
+                  <Input
+                    placeholder="Mitarbeiter suchen..."
+                    value={slotEmployeeSearch}
+                    onChange={(e) => setSlotEmployeeSearch(e.target.value)}
+                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                    autoFocus
+                  />
+                </div>
+                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin">
+                <button
+                  onClick={() => { setNewSlotEmployee(""); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                    newSlotEmployee === "" 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Kein Mitarbeiter ausgewählt
+                </button>
+                {[...business?.employees || []]
+                  .filter(e => e.name.toLowerCase().includes(slotEmployeeSearch.toLowerCase()))
+                  .sort((a, b) => a.name.localeCompare(b))
+                  .map((emp: any) => (
+                  <button
+                    key={emp.id}
+                    onClick={() => { setNewSlotEmployee(emp.id); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotEmployee === emp.id 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {emp.name}
+                  </button>
                 ))}
-              </select>
-            </div>
-            <div className="relative">
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Name des Kunden</label>
               <Input 
                 value={clientName} 
@@ -824,7 +946,6 @@ export function Calendar() {
                 </div>
               )}
             </div>
-          </div>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
             <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsModalOpen(false)}>Abbrechen</Button>
@@ -865,7 +986,11 @@ export function Calendar() {
         </div>
       </Modal>
 
-      <Modal isOpen={isFreeSlotModalOpen} onClose={() => setIsFreeSlotModalOpen(false)} title="Neuer freier Slot">
+      <Modal isOpen={isFreeSlotModalOpen} onClose={() => {
+        setIsFreeSlotModalOpen(false);
+        setIsCustomFreeService(false);
+        setCustomFreeService("");
+      }} title="Neuer freier Slot">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Melden Sie einen freien Slot, um sofort passende Kunden zu benachrichtigen.</p>
         
         <div className="space-y-6">
@@ -883,48 +1008,133 @@ export function Calendar() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotTime}
-                onChange={(e) => setNewSlotTime(e.target.value)}
-              >
+              <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
                 {generateTimeSlots().map((time) => (
-                  <option key={time} value={time}>{time}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typen</label>
-              <div className="flex flex-col gap-2 max-h-32 overflow-y-auto pr-2 scrollbar-thin">
-                {business?.serviceTypes?.map((service: string) => (
-                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={newSlotServices.includes(service)}
-                      onChange={() => setNewSlotServices(prev => 
-                        prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
-                      )}
-                      className="accent-accent shrink-0"
-                    />
-                    <span className="truncate">{service}</span>
-                  </label>
+                  <button
+                    key={time}
+                    onClick={() => setNewSlotTime(time)}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotTime === time 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {time}
+                  </button>
                 ))}
               </div>
             </div>
+          <div className="mb-6">
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Dienstleistung suchen..."
+                  value={slotServiceSearch}
+                  onChange={(e) => setSlotServiceSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {[...business?.serviceTypes || []]
+                  .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((service: string) => (
+                  <button
+                    key={service}
+                    onClick={() => {
+                      setIsCustomFreeService(false);
+                      setNewSlotServices([service]);
+                      setSlotServiceSearch("");
+                    }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      !isCustomFreeService && newSlotServices.includes(service) 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {service}
+                  </button>
+                ))}
+              </div>
+              <div className="p-2 border-t border-gray-100 dark:border-slate-700">
+                  <button
+                    onClick={() => {
+                      setIsCustomFreeService(true);
+                      setSlotServiceSearch("");
+                    }}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      isCustomFreeService 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Individuell...
+                  </button>
+              </div>
+            </div>
+            {isCustomFreeService && (
+              <Input 
+                placeholder="Eigene Dienstleistung..." 
+                value={customFreeService}
+                onChange={(e) => setCustomFreeService(e.target.value)}
+                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            )}
+          </div>
           </div>
 
-          <div>
+          <div className="relative">
             <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-            <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              value={newSlotEmployee}
-              onChange={(e) => setNewSlotEmployee(e.target.value)}
+            <button
+              type="button"
+              onClick={() => setIsSlotEmployeeDropdownOpen(!isSlotEmployeeDropdownOpen)}
+              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white"
             >
-              <option value="">Kein Mitarbeiter ausgewählt</option>
-              {business?.employees?.map((emp: any) => (
-                <option key={emp.id} value={emp.id}>{emp.name}</option>
-              ))}
-            </select>
+              <span>{newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee)?.name : "Kein Mitarbeiter ausgewählt"}</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${isSlotEmployeeDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isSlotEmployeeDropdownOpen && (
+              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-[220px] flex flex-col">
+                <div className="p-2 border-b border-gray-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-20">
+                  <Input
+                    placeholder="Mitarbeiter suchen..."
+                    value={slotEmployeeSearch}
+                    onChange={(e) => setSlotEmployeeSearch(e.target.value)}
+                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                    autoFocus
+                  />
+                </div>
+                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin">
+                <button
+                  onClick={() => { setNewSlotEmployee(""); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                    newSlotEmployee === "" 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Kein Mitarbeiter ausgewählt
+                </button>
+                {[...business?.employees || []]
+                  .filter(e => e.name.toLowerCase().includes(slotEmployeeSearch.toLowerCase()))
+                  .sort((a, b) => a.name.localeCompare(b))
+                  .map((emp: any) => (
+                  <button
+                    key={emp.id}
+                    onClick={() => { setNewSlotEmployee(emp.id); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotEmployee === emp.id 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {emp.name}
+                  </button>
+                ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -1012,14 +1222,18 @@ export function Calendar() {
         </div>
       </Modal>
 
-      <Modal isOpen={isNotifyMoreModalOpen} onClose={() => setIsNotifyMoreModalOpen(false)} title="Weitere Kunden benachrichtigen">
+      <Modal isOpen={isNotifyMoreModalOpen} onClose={() => {
+        setIsNotifyMoreModalOpen(false);
+        setIsCustomNotifyService(false);
+        setCustomNotifyService("");
+      }} title="Weitere Kunden benachrichtigen">
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistungen</label>
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2 scrollbar-thin">
-                {business?.serviceTypes?.map((service: string) => (
-                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700">
+              <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
+                {[...business?.serviceTypes || []].sort((a, b) => a.localeCompare(b)).map((service: string) => (
+                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
                     <input
                       type="checkbox"
                       checked={additionalServiceType.includes(service)}
@@ -1037,19 +1251,51 @@ export function Calendar() {
                   </label>
                 ))}
               </div>
+              <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isCustomNotifyService}
+                  onChange={() => setIsCustomNotifyService(!isCustomNotifyService)}
+                  className="accent-accent shrink-0"
+                />
+                <span className="truncate">Individuell...</span>
+              </label>
+              {isCustomNotifyService && (
+                <Input 
+                  placeholder="Eigene Dienstleistung..." 
+                  value={customNotifyService}
+                  onChange={(e) => setCustomNotifyService(e.target.value)}
+                  className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={additionalEmployeeId}
-                onChange={(e) => setAdditionalEmployeeId(e.target.value)}
-              >
-                <option value="">Kein Mitarbeiter ausgewählt</option>
-                {business?.employees?.map((emp: any) => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+              <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin">
+                <button
+                  onClick={() => setAdditionalEmployeeId("")}
+                  className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
+                    additionalEmployeeId === "" 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                      : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Kein Mitarbeiter ausgewählt
+                </button>
+                {[...business?.employees || []].sort((a, b) => a.name.localeCompare(b)).map((emp: any) => (
+                  <button
+                    key={emp.id}
+                    onClick={() => setAdditionalEmployeeId(emp.id)}
+                    className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
+                      additionalEmployeeId === emp.id 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                        : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {emp.name}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
           </div>
 

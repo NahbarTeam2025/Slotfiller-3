@@ -9,7 +9,7 @@ import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
-import { Calendar, CheckCircle, Users, Plus, MoreVertical, Edit2, Trash2, AlertTriangle, Calendar as CalendarIcon, Clock } from "lucide-react";
+import { Calendar, CheckCircle, Users, Plus, MoreVertical, Edit2, Trash2, AlertTriangle, Calendar as CalendarIcon, Clock, ChevronDown } from "lucide-react";
 import Holidays from "date-holidays";
 
 export function Dashboard() {
@@ -43,6 +43,12 @@ export function Dashboard() {
   const [slotToDelete, setSlotToDelete] = useState<any>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
+  const [isCustomService, setIsCustomService] = useState(false);
+  const [customService, setCustomService] = useState("");
+  const [isCustomFreeService, setIsCustomFreeService] = useState(false);
+  const [customFreeService, setCustomFreeService] = useState("");
+  const [isCustomNotifyService, setIsCustomNotifyService] = useState(false);
+  const [customNotifyService, setCustomNotifyService] = useState("");
 
   const [notifiedFilterEmployee, setNotifiedFilterEmployee] = useState("");
   const [notifiedFilterClient, setNotifiedFilterClient] = useState("");
@@ -56,6 +62,10 @@ export function Dashboard() {
   const [newSlotServices, setNewSlotServices] = useState<string[]>([]);
   const [matchingClients, setMatchingClients] = useState<any[]>([]);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [isSlotServiceDropdownOpen, setIsSlotServiceDropdownOpen] = useState(false);
+  const [slotServiceSearch, setSlotServiceSearch] = useState("");
+  const [isSlotEmployeeDropdownOpen, setIsSlotEmployeeDropdownOpen] = useState(false);
+  const [slotEmployeeSearch, setSlotEmployeeSearch] = useState("");
 
   useEffect(() => {
     if (!businessId || !isCreateFreeSlotModalOpen) return;
@@ -71,17 +81,12 @@ export function Dashboard() {
         const allActiveClients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
         const now = new Date();
-        const localNowString = `${format(now, 'yyyy-MM-dd')}T${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         
-        const futureBookedClients = slots
-          .filter(s => s.status === 'booked' && `${s.date}T${s.time}` >= localNowString)
-          .map(s => s.bookedBy);
-
         const filteredClients = allActiveClients.filter((client: any) => {
           const matchesService = newSlotServices.length === 0 || 
+            !client.serviceTypes || client.serviceTypes.length === 0 ||
             client.serviceTypes?.some((s: string) => newSlotServices.includes(s));
-          const isNotBooked = !futureBookedClients.includes(client.name);
-          return matchesService && isNotBooked;
+          return matchesService;
         });
 
         setMatchingClients(filteredClients);
@@ -103,12 +108,6 @@ export function Dashboard() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setBusiness(data);
-        if (data.serviceTypes?.length > 0 && !newSlotService) {
-          setNewSlotService(data.serviceTypes[0]);
-        }
-        if (data.employees?.length > 0 && !newSlotEmployee) {
-          setNewSlotEmployee(data.employees[0].id);
-        }
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, `businesses/${businessId}`);
@@ -140,6 +139,59 @@ export function Dashboard() {
     };
   }, [businessId]);
 
+  // Auto-expiry for open slots
+  useEffect(() => {
+    if (!businessId) return;
+    
+    const interval = setInterval(async () => {
+      const now = new Date();
+      const today = format(now, 'yyyy-MM-dd');
+      const time = format(now, 'HH:mm');
+      
+      const expiredSlots = slots.filter(s => 
+        s.status === 'open' && 
+        s.notifiedClients?.length > 0 &&
+        (s.date < today || (s.date === today && s.time <= time))
+      );
+
+      for (const slot of expiredSlots) {
+        try {
+          // 1. Try to notify worker about expiry (optional/best-effort)
+          // We wrap this in its own try-catch so a network error doesn't block the DB reset
+          try {
+            await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                businessId,
+                slotId: slot.id,
+                date: slot.date,
+                time: slot.time,
+                serviceType: slot.serviceType,
+                manualClients: slot.notifiedClients,
+                isExpired: true
+              })
+            });
+          } catch (fetchErr) {
+            // Log as warning, but don't throw - we still want to reset the slot
+            console.warn("Could not notify worker about expired slot (likely CORS or network):", fetchErr);
+          }
+
+          // 2. Reset notified clients so they don't get notified again and slot appears "open" again
+          // This is the critical part to stop the loop
+          await updateDoc(doc(db, `businesses/${businessId}/slots`, slot.id), {
+            notifiedClients: [],
+            status: "open"
+          });
+        } catch (err) {
+          console.error("Error handling expired slot reset:", err);
+        }
+      }
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [businessId, slots]);
+
   const toggleClientSelection = (clientId: string) => {
     setSelectedClients(prev => 
       prev.includes(clientId) ? prev.filter(id => id !== clientId) : [...prev, clientId]
@@ -147,14 +199,18 @@ export function Dashboard() {
   };
 
   const handleCreateFreeSlot = async () => {
-    if (!businessId || !newSlotDate || !newSlotTime || newSlotServices.length === 0) return;
+    const finalServices = isCustomFreeService && customFreeService.trim() 
+      ? [...newSlotServices, customFreeService.trim()]
+      : newSlotServices;
+
+    if (!businessId || !newSlotDate || !newSlotTime || finalServices.length === 0) return;
     setIsSubmitting(true);
 
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
     
     let serviceTypeString = "";
-    if (newSlotServices && newSlotServices.length > 0) {
-      serviceTypeString = newSlotServices.join(", ");
+    if (finalServices && finalServices.length > 0) {
+      serviceTypeString = finalServices.join(", ");
     }
     if (employee) {
       serviceTypeString += serviceTypeString ? ` bei ${employee.name}` : `Bei ${employee.name}`;
@@ -200,6 +256,8 @@ export function Dashboard() {
 
       setIsCreateFreeSlotModalOpen(false);
       setNewSlotServices([]);
+      setIsCustomFreeService(false);
+      setCustomFreeService("");
     } catch (error) {
       console.error("Error creating free slot", error);
     } finally {
@@ -208,10 +266,11 @@ export function Dashboard() {
   };
 
   const handleCreateBookedSlot = async () => {
-    if (!businessId || !newSlotDate || !newSlotTime || !newSlotService || !clientName) return;
-    setIsSubmitting(true);
-
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
+    const finalService = isCustomService && customService.trim() ? customService.trim() : newSlotService;
+
+    if (!businessId || !newSlotDate || !newSlotTime || !finalService || !clientName) return;
+    setIsSubmitting(true);
 
     try {
       if (isEditMode && editingSlotId) {
@@ -219,7 +278,7 @@ export function Dashboard() {
         await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
           date: newSlotDate,
           time: newSlotTime,
-          serviceType: newSlotService,
+          serviceType: finalService,
           employeeId: newSlotEmployee || null,
           employeeName: employee?.name || "",
           bookedBy: clientName,
@@ -235,7 +294,7 @@ export function Dashboard() {
             status: "booked",
             bookedBy: clientName,
             bookedAt: new Date().toISOString(),
-            serviceType: newSlotService,
+            serviceType: finalService,
             employeeId: newSlotEmployee || null,
             employeeName: employee?.name || null
           });
@@ -244,7 +303,7 @@ export function Dashboard() {
           await addDoc(collection(db, `businesses/${businessId}/slots`), {
             date: newSlotDate,
             time: newSlotTime,
-            serviceType: newSlotService,
+            serviceType: finalService,
             employeeId: newSlotEmployee || null,
             employeeName: employee?.name || "",
             status: "booked",
@@ -275,6 +334,8 @@ export function Dashboard() {
       setIsEditMode(false);
       setEditingSlotId(null);
       setClientName("");
+      setIsCustomService(false);
+      setCustomService("");
     } catch (error) {
       console.error("Error saving booked slot", error);
     } finally {
@@ -294,14 +355,18 @@ export function Dashboard() {
   };
 
   const handleNotifyMoreClients = async () => {
+    const finalServices = isCustomNotifyService && customNotifyService.trim() 
+      ? (additionalServiceType ? additionalServiceType.split(', ') : []).concat(customNotifyService.trim()).join(', ')
+      : additionalServiceType;
+
     if (!businessId || !selectedOpenSlot || additionalClients.length === 0) return;
     setIsSubmitting(true);
 
     const employee = additionalEmployeeId ? business?.employees?.find((e: any) => e.id === additionalEmployeeId) : null;
     
     let serviceTypeString = "";
-    if (additionalServiceType) {
-      serviceTypeString = additionalServiceType;
+    if (finalServices) {
+      serviceTypeString = finalServices;
     }
     if (employee) {
       serviceTypeString += serviceTypeString ? ` bei ${employee.name}` : `Bei ${employee.name}`;
@@ -336,6 +401,10 @@ export function Dashboard() {
           });
         });
       }
+
+      setIsNotifyMoreModalOpen(false);
+      setIsCustomNotifyService(false);
+      setCustomNotifyService("");
     } catch (workerErr) {
       console.error("Error calling worker", workerErr);
       setWorkerError("Fehler beim Benachrichtigen der Kunden. Bitte prüfen Sie die Worker-Konfiguration.");
@@ -539,7 +608,7 @@ export function Dashboard() {
       <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col lg:flex-1 lg:min-h-0">
         <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50 shrink-0">
           <h3 className="text-lg font-bold text-deep-blue dark:text-white">Heutiger Zeitplan</h3>
-          <span className="text-xs font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase">{format(new Date(), 'dd.MM.yyyy')}</span>
+          <span className="text-xs font-bold tracking-widest text-gray-400 dark:text-gray-500 uppercase whitespace-nowrap">{format(new Date(), 'dd.MM.yyyy')}</span>
         </div>
         <div className="lg:flex-1 lg:overflow-y-auto">
           {holidayName ? (
@@ -661,6 +730,8 @@ export function Dashboard() {
         setIsModalOpen(false);
         setIsEditMode(false);
         setEditingSlotId(null);
+        setIsCustomService(false);
+        setCustomService("");
       }} title={isEditMode ? "Termin bearbeiten" : "Gebuchten Termin eintragen"}>
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
           {isEditMode 
@@ -678,49 +749,126 @@ export function Dashboard() {
               className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
             />
           </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
+                <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotTime}
-                onChange={(e) => setNewSlotTime(e.target.value)}
-              >
+              <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
                 {timeSlots.map((time) => (
-                  <option key={time} value={time}>{time}</option>
+                  <button
+                    key={time}
+                    onClick={() => setNewSlotTime(time)}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotTime === time 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {time}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotEmployee}
-                onChange={(e) => setNewSlotEmployee(e.target.value)}
-              >
-                <option value="">Kein Mitarbeiter ausgewählt</option>
-                {business?.employees?.map((emp: any) => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
+              <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+                <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                  <Input
+                    placeholder="Dienstleistung suchen..."
+                    value={slotServiceSearch}
+                    onChange={(e) => setSlotServiceSearch(e.target.value)}
+                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                  {[...business?.serviceTypes || []]
+                    .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((service: string) => (
+                    <button
+                      key={service}
+                      onClick={() => {
+                        setIsCustomService(false);
+                        setNewSlotService(service);
+                        setSlotServiceSearch("");
+                      }}
+                      className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                        !isCustomService && newSlotService === service 
+                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {service}
+                    </button>
+                  ))}
+                </div>
+                <div className="p-2 border-t border-gray-100 dark:border-slate-700">
+                    <button
+                      onClick={() => {
+                        setIsCustomService(true);
+                        setSlotServiceSearch("");
+                      }}
+                      className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                        isCustomService 
+                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      Individuell...
+                    </button>
+                </div>
+              </div>
+              {isCustomService && (
+                <Input 
+                  placeholder="Eigene Dienstleistung..." 
+                  value={customService}
+                  onChange={(e) => setCustomService(e.target.value)}
+                  className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                />
+              )}
+            </div>  </div>
+
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Mitarbeiter suchen..."
+                  value={slotEmployeeSearch}
+                  onChange={(e) => setSlotEmployeeSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                <button
+                  onClick={() => { setNewSlotEmployee(""); setSlotEmployeeSearch(""); }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                    newSlotEmployee === "" 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Kein Mitarbeiter ausgewählt
+                </button>
+                {[...business?.employees || []]
+                  .filter(e => e.name.toLowerCase().includes(slotEmployeeSearch.toLowerCase()))
+                  .sort((a, b) => a.name.localeCompare(b))
+                  .map((emp: any) => (
+                  <button
+                    key={emp.id}
+                    onClick={() => { setNewSlotEmployee(emp.id); setSlotEmployeeSearch(""); }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotEmployee === emp.id 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {emp.name}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotService}
-                onChange={(e) => setNewSlotService(e.target.value)}
-              >
-                {business?.serviceTypes?.map((service: string) => (
-                  <option key={service} value={service}>{service}</option>
-                ))}
-              </select>
-            </div>
-            <div className="relative">
+          <div className="relative">
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Name des Kunden</label>
               <Input 
                 value={clientName} 
@@ -757,7 +905,9 @@ export function Dashboard() {
                 </div>
               )}
             </div>
-          </div>
+
+          {/* Add extra space if dropdown is open to prevent cutting off */}
+          {showClientDropdown && <div className="h-32" />}
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
             <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsModalOpen(false)}>Abbrechen</Button>
@@ -769,8 +919,7 @@ export function Dashboard() {
               {isSubmitting ? "Wird gespeichert..." : "Termin speichern"}
             </Button>
           </div>
-        </div>
-      </Modal>
+        </Modal>
 
       <Modal isOpen={isNotifiedClientsModalOpen} onClose={() => setIsNotifiedClientsModalOpen(false)} title="Benachrichtigte Kunden">
         <div className="space-y-4">
@@ -803,7 +952,7 @@ export function Dashboard() {
                   <div>
                     <p className="font-bold text-deep-blue">{item.clientName}</p>
                     <p className="text-xs text-gray-500">
-                      {item.slot.serviceType} am {item.slot.date} um {item.slot.time}
+                      {item.slot.serviceType} am {format(new Date(item.slot.date), 'dd.MM.yyyy')} um {item.slot.time}
                       {item.slot.employeeName && ` bei ${item.slot.employeeName}`}
                     </p>
                   </div>
@@ -831,14 +980,18 @@ export function Dashboard() {
         </div>
       </Modal>
 
-      <Modal isOpen={isNotifyMoreModalOpen} onClose={() => setIsNotifyMoreModalOpen(false)} title="Weitere Kunden benachrichtigen">
+      <Modal isOpen={isNotifyMoreModalOpen} onClose={() => {
+        setIsNotifyMoreModalOpen(false);
+        setIsCustomNotifyService(false);
+        setCustomNotifyService("");
+      }} title="Weitere Kunden benachrichtigen">
         <div className="space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistungen</label>
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2 scrollbar-thin">
-                {business?.serviceTypes?.map((service: string) => (
-                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700">
+              <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
+                {[...business?.serviceTypes || []].sort((a, b) => a.localeCompare(b)).map((service: string) => (
+                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
                     <input
                       type="checkbox"
                       checked={additionalServiceType.includes(service)}
@@ -856,19 +1009,51 @@ export function Dashboard() {
                   </label>
                 ))}
               </div>
+              <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+                <input
+                  type="checkbox"
+                  checked={isCustomNotifyService}
+                  onChange={() => setIsCustomNotifyService(!isCustomNotifyService)}
+                  className="accent-accent shrink-0"
+                />
+                <span className="truncate">Individuell...</span>
+              </label>
+              {isCustomNotifyService && (
+                <Input 
+                  placeholder="Eigene Dienstleistung..." 
+                  value={customNotifyService}
+                  onChange={(e) => setCustomNotifyService(e.target.value)}
+                  className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                />
+              )}
             </div>
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={additionalEmployeeId}
-                onChange={(e) => setAdditionalEmployeeId(e.target.value)}
-              >
-                <option value="">Kein Mitarbeiter ausgewählt</option>
-                {business?.employees?.map((emp: any) => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+              <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin">
+                <button
+                  onClick={() => setAdditionalEmployeeId("")}
+                  className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
+                    additionalEmployeeId === "" 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                      : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Kein Mitarbeiter ausgewählt
+                </button>
+                {[...business?.employees || []].sort((a, b) => a.name.localeCompare(b)).map((emp: any) => (
+                  <button
+                    key={emp.id}
+                    onClick={() => setAdditionalEmployeeId(emp.id)}
+                    className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
+                      additionalEmployeeId === emp.id 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                        : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {emp.name}
+                  </button>
                 ))}
-              </select>
+              </div>
             </div>
           </div>
 
@@ -1003,7 +1188,11 @@ export function Dashboard() {
         </div>
       </Modal>
 
-      <Modal isOpen={isCreateFreeSlotModalOpen} onClose={() => setIsCreateFreeSlotModalOpen(false)} title="Neuer freier Slot">
+      <Modal isOpen={isCreateFreeSlotModalOpen} onClose={() => {
+        setIsCreateFreeSlotModalOpen(false);
+        setIsCustomFreeService(false);
+        setCustomFreeService("");
+      }} title="Neuer freier Slot">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Melden Sie einen freien Slot, um sofort passende Kunden zu benachrichtigen.</p>
         
         <div className="space-y-6">
@@ -1019,53 +1208,124 @@ export function Dashboard() {
           </div>
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newSlotTime}
-                onChange={(e) => setNewSlotTime(e.target.value)}
-              >
-                {Array.from({ length: 24 * 4 }).map((_, i) => {
-                  const hours = Math.floor(i / 4).toString().padStart(2, '0');
-                  const minutes = ((i % 4) * 15).toString().padStart(2, '0');
-                  const time = `${hours}:${minutes}`;
-                  return <option key={time} value={time}>{time}</option>;
-                })}
-              </select>
+          <div className="mb-6">
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
+            <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
+              {generateTimeSlots().map((time) => (
+                <button
+                  key={time}
+                  onClick={() => setNewSlotTime(time)}
+                  className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                    newSlotTime === time 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {time}
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typen</label>
-              <div className="flex flex-col gap-2 max-h-32 overflow-y-auto pr-2 scrollbar-thin">
-                {business?.serviceTypes?.map((service: string) => (
-                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={newSlotServices.includes(service)}
-                      onChange={() => setNewSlotServices(prev => 
-                        prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
-                      )}
-                      className="accent-accent shrink-0"
-                    />
-                    <span className="truncate">{service}</span>
-                  </label>
+          </div>
+          <div className="mb-6">
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Dienstleistung suchen..."
+                  value={slotServiceSearch}
+                  onChange={(e) => setSlotServiceSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {[...business?.serviceTypes || []]
+                  .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((service: string) => (
+                  <button
+                    key={service}
+                    onClick={() => {
+                      setIsCustomFreeService(false);
+                      setNewSlotServices([service]);
+                      setSlotServiceSearch("");
+                    }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      !isCustomFreeService && newSlotServices.includes(service) 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {service}
+                  </button>
                 ))}
               </div>
+              <div className="p-2 border-t border-gray-100 dark:border-slate-700">
+                  <button
+                    onClick={() => {
+                      setIsCustomFreeService(true);
+                      setSlotServiceSearch("");
+                    }}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      isCustomFreeService 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Individuell...
+                  </button>
+              </div>
             </div>
+            {isCustomFreeService && (
+              <Input 
+                placeholder="Eigene Dienstleistung..." 
+                value={customFreeService}
+                onChange={(e) => setCustomFreeService(e.target.value)}
+                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            )}
+          </div>
           </div>
 
           <div>
             <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-            <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              value={newSlotEmployee}
-              onChange={(e) => setNewSlotEmployee(e.target.value)}
-            >
-              <option value="">Kein Mitarbeiter ausgewählt</option>
-              {business?.employees?.map((emp: any) => (
-                <option key={emp.id} value={emp.id}>{emp.name}</option>
-              ))}
-            </select>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Mitarbeiter suchen..."
+                  value={slotEmployeeSearch}
+                  onChange={(e) => setSlotEmployeeSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                <button
+                  onClick={() => { setNewSlotEmployee(""); setSlotEmployeeSearch(""); }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                    newSlotEmployee === "" 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Kein Mitarbeiter ausgewählt
+                </button>
+                {[...business?.employees || []]
+                  .filter(e => e.name.toLowerCase().includes(slotEmployeeSearch.toLowerCase()))
+                  .sort((a, b) => a.name.localeCompare(b))
+                  .map((emp: any) => (
+                  <button
+                    key={emp.id}
+                    onClick={() => { setNewSlotEmployee(emp.id); setSlotEmployeeSearch(""); }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotEmployee === emp.id 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {emp.name}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -1142,7 +1402,7 @@ export function Dashboard() {
                 onChange={(e) => setBookedFilterService(e.target.value)}
               >
                 <option value="">Alle Dienstleistungen</option>
-                {business?.serviceTypes?.map((service: string) => (
+                {[...business?.serviceTypes || []].sort((a, b) => a.localeCompare(b)).map((service: string) => (
                   <option key={service} value={service}>{service}</option>
                 ))}
               </select>
@@ -1229,7 +1489,7 @@ export function Dashboard() {
             <div>
               <p className="font-bold mb-1">Möchtest du diesen Termin wirklich löschen?</p>
               <p className="text-sm opacity-90">
-                Der Termin am {slotToDelete?.date} um {slotToDelete?.time} Uhr für {slotToDelete?.bookedBy} wird unwiderruflich entfernt.
+                Der Termin am {slotToDelete?.date ? format(new Date(slotToDelete.date), 'dd.MM.yyyy') : ''} um {slotToDelete?.time} Uhr für {slotToDelete?.bookedBy} wird unwiderruflich entfernt.
               </p>
             </div>
           </div>

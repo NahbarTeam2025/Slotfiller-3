@@ -6,7 +6,8 @@ import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
-import { Plus, Trash2, Edit2, Clock, AlertTriangle, Search, Filter } from "lucide-react";
+import { format } from "date-fns";
+import { Plus, Trash2, Edit2, Clock, AlertTriangle, Search, Filter, ChevronDown } from "lucide-react";
 
 export function Clients() {
   const { businessId } = useAuth();
@@ -60,6 +61,12 @@ export function Clients() {
   const [newSlotService, setNewSlotService] = useState("");
   const [newSlotEmployee, setNewSlotEmployee] = useState("");
   const [isSavingSlot, setIsSavingSlot] = useState(false);
+  const [isCustomService, setIsCustomService] = useState(false);
+  const [customService, setCustomService] = useState("");
+  const [isCustomSlotService, setIsCustomSlotService] = useState(false);
+  const [customSlotService, setCustomSlotService] = useState("");
+  const [isSlotServiceDropdownOpen, setIsSlotServiceDropdownOpen] = useState(false);
+  const [isSlotEmployeeDropdownOpen, setIsSlotEmployeeDropdownOpen] = useState(false);
 
   useEffect(() => {
     console.log("Business ID:", businessId);
@@ -78,7 +85,8 @@ export function Clients() {
     );
     const unsubClients = onSnapshot(q, (snapshot) => {
       console.log("Snapshot size:", snapshot.size);
-      const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""));
       console.log("Clients Data:", clientsData);
       setClients(clientsData);
     }, (error) => {
@@ -121,11 +129,14 @@ export function Clients() {
     setNewSlotTime(slot.time);
     setNewSlotService(slot.serviceType);
     setNewSlotEmployee(slot.employeeId || "");
+    setIsCustomSlotService(false);
+    setCustomSlotService("");
     setIsEditSlotModalOpen(true);
   };
 
   const handleSaveSlot = async () => {
-    if (!businessId || !editingSlot || !newSlotDate || !newSlotTime || !newSlotService) return;
+    const finalService = isCustomSlotService && customSlotService.trim() ? customSlotService.trim() : newSlotService;
+    if (!businessId || !editingSlot || !newSlotDate || !newSlotTime || !finalService) return;
     setIsSavingSlot(true);
 
     try {
@@ -134,7 +145,7 @@ export function Clients() {
       await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlot.id), {
         date: newSlotDate,
         time: newSlotTime,
-        serviceType: newSlotService,
+        serviceType: finalService,
         employeeId: newSlotEmployee || null,
         employeeName: employee?.name || "",
         updatedAt: new Date().toISOString()
@@ -142,8 +153,8 @@ export function Clients() {
 
       setIsEditSlotModalOpen(false);
       setEditingSlot(null);
-      // Refresh the selected client appointments if needed
-      // Since we have onSnapshot for slots, it should update automatically
+      setIsCustomSlotService(false);
+      setCustomSlotService("");
     } catch (error) {
       console.error("Error updating slot", error);
     } finally {
@@ -177,6 +188,8 @@ export function Clients() {
     setSelectedServices([]);
     setSelectedTimes([]);
     setConsentGiven(false);
+    setIsCustomService(false);
+    setCustomService("");
     setIsModalOpen(true);
   };
 
@@ -188,12 +201,18 @@ export function Clients() {
     setSelectedServices(client.serviceTypes || []);
     setSelectedTimes(client.preferredTimes || []);
     setConsentGiven(client.consentGiven || false);
+    setIsCustomService(false);
+    setCustomService("");
     setIsModalOpen(true);
   };
 
   const handleSaveClient = async () => {
     if (!businessId || !name || !phone || !consentGiven) return;
     setIsSubmitting(true);
+
+    const finalServices = isCustomService && customService.trim() 
+      ? [...selectedServices, customService.trim()]
+      : selectedServices;
 
     // Normalize phone number: replace leading 0 with +49
     let normalizedPhone = phone.trim();
@@ -206,7 +225,7 @@ export function Clients() {
         await updateDoc(doc(db, `businesses/${businessId}/clients`, editingClientId), {
           name,
           phone: normalizedPhone,
-          serviceTypes: selectedServices,
+          serviceTypes: finalServices,
           preferredTimes: selectedTimes,
           consentGiven
         });
@@ -214,7 +233,7 @@ export function Clients() {
         await addDoc(collection(db, `businesses/${businessId}/clients`), {
           name,
           phone: normalizedPhone,
-          serviceTypes: selectedServices,
+          serviceTypes: finalServices,
           preferredTimes: selectedTimes,
           consentGiven,
           consentTimestamp: serverTimestamp(),
@@ -224,6 +243,8 @@ export function Clients() {
       }
       
       setIsModalOpen(false);
+      setIsCustomService(false);
+      setCustomService("");
     } catch (error) {
       console.error("Error saving client", error);
     } finally {
@@ -247,21 +268,31 @@ export function Clients() {
     }
   };
 
-  const filteredClients = clients.filter(client => {
-    const nameStr = client.name || "";
-    const phoneStr = client.phone || "";
-    const matchesSearch = nameStr.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          phoneStr.includes(searchQuery);
-    const matchesService = filterService === "all" || (client.serviceTypes && client.serviceTypes.includes(filterService));
-    const clientAppointments = slots.filter(s => s.bookedBy === nameStr);
-    const hasAppointment = clientAppointments.length > 0;
-    const matchesAppointment = filterAppointment === "all" || 
-                               (filterAppointment === "yes" && hasAppointment) || 
-                               (filterAppointment === "no" && !hasAppointment);
-    const matchesTime = filterTime === "all" || (client.preferredTimes && client.preferredTimes.includes(filterTime));
-    
-    return matchesSearch && matchesService && matchesAppointment && matchesTime;
-  });
+  const filteredClients = clients
+    .filter(client => {
+      const nameStr = client.name || "";
+      const phoneStr = client.phone || "";
+      const matchesSearch = nameStr.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            phoneStr.includes(searchQuery);
+      const matchesService = filterService === "all" || (client.serviceTypes && client.serviceTypes.includes(filterService));
+      
+      const now = new Date();
+      const nowString = format(now, 'yyyy-MM-dd');
+      const nowTime = format(now, 'HH:mm');
+      
+      const clientAppointments = slots.filter(s => 
+        s.bookedBy === nameStr && 
+        (s.date > nowString || (s.date === nowString && s.time >= nowTime))
+      );
+      const hasAppointment = clientAppointments.length > 0;
+      const matchesAppointment = filterAppointment === "all" || 
+                                 (filterAppointment === "yes" && hasAppointment) || 
+                                 (filterAppointment === "no" && !hasAppointment);
+      const matchesTime = filterTime === "all" || (client.preferredTimes && client.preferredTimes.includes(filterTime));
+      
+      return matchesSearch && matchesService && matchesAppointment && matchesTime;
+    })
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   
   console.log("Clients:", clients);
   console.log("Filtered Clients:", filteredClients);
@@ -332,7 +363,13 @@ export function Clients() {
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
               {filteredClients.map((client) => {
-                const clientAppointments = slots.filter(s => s.bookedBy === client.name);
+                const now = new Date();
+                const nowString = format(now, 'yyyy-MM-dd');
+                const nowTime = format(now, 'HH:mm');
+                const clientAppointments = slots.filter(s => 
+                  s.bookedBy === client.name && 
+                  (s.date > nowString || (s.date === nowString && s.time >= nowTime))
+                );
                 const hasAppointment = clientAppointments.length > 0;
                 return (
                 <tr 
@@ -440,21 +477,36 @@ export function Clients() {
 
           <div>
             <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Gewünschte Services</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {business?.serviceTypes?.map((service: string) => (
-                <button
-                  key={service}
-                  onClick={() => toggleService(service)}
-                  className={`p-3 rounded-lg text-sm font-medium text-left transition-colors ${
-                    selectedServices.includes(service) 
-                      ? 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-900 dark:text-indigo-300 border-2 border-indigo-200 dark:border-indigo-800/50' 
-                      : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  {service}
-                </button>
+            <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
+              {[...business?.serviceTypes || []].sort((a, b) => a.localeCompare(b)).map((service: string) => (
+                <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={selectedServices.includes(service)}
+                    onChange={() => toggleService(service)}
+                    className="accent-accent shrink-0"
+                  />
+                  <span className="truncate">{service}</span>
+                </label>
               ))}
             </div>
+            <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+              <input
+                type="checkbox"
+                checked={isCustomService}
+                onChange={() => setIsCustomService(!isCustomService)}
+                className="accent-accent shrink-0"
+              />
+              <span className="truncate">Individuell...</span>
+            </label>
+            {isCustomService && (
+              <Input 
+                placeholder="Eigene Dienstleistung..." 
+                value={customService}
+                onChange={(e) => setCustomService(e.target.value)}
+                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            )}
           </div>
 
           <div>
@@ -609,7 +661,11 @@ export function Clients() {
         </div>
       </Modal>
 
-      <Modal isOpen={isEditSlotModalOpen} onClose={() => setIsEditSlotModalOpen(false)} title="Termin bearbeiten">
+      <Modal isOpen={isEditSlotModalOpen} onClose={() => {
+        setIsEditSlotModalOpen(false);
+        setIsCustomSlotService(false);
+        setCustomSlotService("");
+      }} title="Termin bearbeiten">
         <div className="space-y-6">
           <div>
             <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Datum</label>
@@ -634,36 +690,96 @@ export function Clients() {
             
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-              <select 
-                value={newSlotEmployee}
-                onChange={(e) => setNewSlotEmployee(e.target.value)}
-                className="w-full h-10 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white"
+              <button
+                type="button"
+                onClick={() => setIsSlotEmployeeDropdownOpen(!isSlotEmployeeDropdownOpen)}
+                className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white"
               >
-                <option value="">Kein spezifischer Mitarbeiter</option>
-                {business?.employees?.map((emp: any) => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
-                ))}
-              </select>
+                <span>{newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee)?.name : "Kein spezifischer Mitarbeiter"}</span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${isSlotEmployeeDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isSlotEmployeeDropdownOpen && (
+                <div className="mt-2 flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin">
+                  <button
+                    onClick={() => { setNewSlotEmployee(""); setIsSlotEmployeeDropdownOpen(false); }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors border-2 ${
+                      newSlotEmployee === "" 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                        : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Kein spezifischer Mitarbeiter
+                  </button>
+                  {[...business?.employees || []].sort((a, b) => a.name.localeCompare(b)).map((emp: any) => (
+                    <button
+                      key={emp.id}
+                      onClick={() => { setNewSlotEmployee(emp.id); setIsSlotEmployeeDropdownOpen(false); }}
+                      className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
+                        newSlotEmployee === emp.id 
+                          ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                          : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {emp.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistung</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {business?.serviceTypes?.map((service: string) => (
+            <button
+              type="button"
+              onClick={() => setIsSlotServiceDropdownOpen(!isSlotServiceDropdownOpen)}
+              className="flex items-center justify-between w-full p-3 rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white mb-2"
+            >
+              <span>{isCustomSlotService ? "Individuell..." : (newSlotService || "Dienstleistung auswählen")}</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${isSlotServiceDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isSlotServiceDropdownOpen && (
+              <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
+                {[...business?.serviceTypes || []].sort((a, b) => a.localeCompare(b)).map((service: string) => (
+                  <button
+                    key={service}
+                    onClick={() => {
+                      setIsCustomSlotService(false);
+                      setNewSlotService(service);
+                      setIsSlotServiceDropdownOpen(false);
+                    }}
+                    className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
+                      !isCustomSlotService && newSlotService === service 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                        : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {service}
+                  </button>
+                ))}
                 <button
-                  key={service}
-                  onClick={() => setNewSlotService(service)}
-                  className={`p-3 rounded-lg text-sm font-medium text-left transition-colors ${
-                    newSlotService === service 
-                      ? 'bg-accent/20 text-deep-blue dark:text-white border-2 border-accent' 
-                      : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
+                  onClick={() => {
+                    setIsCustomSlotService(true);
+                    setIsSlotServiceDropdownOpen(false);
+                  }}
+                  className={`w-full p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
+                    isCustomSlotService 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
+                      : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
                   }`}
                 >
-                  {service}
+                  Individuell...
                 </button>
-              ))}
-            </div>
+              </div>
+            )}
+            {isCustomSlotService && (
+              <Input 
+                placeholder="Eigene Dienstleistung..." 
+                value={customSlotService}
+                onChange={(e) => setCustomSlotService(e.target.value)}
+                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            )}
           </div>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
@@ -671,7 +787,7 @@ export function Clients() {
             <Button 
               className="flex-1 bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold disabled:opacity-50" 
               onClick={handleSaveSlot}
-              disabled={isSavingSlot || !newSlotDate || !newSlotTime || !newSlotService}
+              disabled={isSavingSlot || !newSlotDate || !newSlotTime || (!isCustomSlotService && !newSlotService) || (isCustomSlotService && !customSlotService.trim())}
             >
               {isSavingSlot ? "Speichern..." : "Speichern"}
             </Button>

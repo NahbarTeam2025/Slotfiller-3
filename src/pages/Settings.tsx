@@ -1,11 +1,12 @@
 import { useState, useEffect, FormEvent } from "react";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc, getDocs, collection, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Modal } from "../components/ui/modal";
-import { Plus, X, MessageSquare, Save, CheckCircle2, Edit2, Trash2, AlertTriangle } from "lucide-react";
+import { format } from "date-fns";
+import { Plus, X, MessageSquare, Save, CheckCircle2, Edit2, Trash2, AlertTriangle, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
 
 export function Settings() {
@@ -63,11 +64,11 @@ export function Settings() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [newEmployeeName, setNewEmployeeName] = useState("");
   const [absences, setAbsences] = useState<any[]>([]);
-  const [newAbsence, setNewAbsence] = useState({ employeeId: "", type: "Urlaub", startDate: "", endDate: "" });
   const [twilioSid, setTwilioSid] = useState("");
   const [twilioToken, setTwilioToken] = useState("");
   const [twilioPhone, setTwilioPhone] = useState("");
   const [slotInterval, setSlotInterval] = useState("30");
+  const [notificationExpiryMinutes, setNotificationExpiryMinutes] = useState("60");
 
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
@@ -83,6 +84,9 @@ export function Settings() {
     saturday: { open: "08:00", close: "14:00", closed: false },
     sunday: { open: "08:00", close: "18:00", closed: true },
   });
+  const [isEmployeeServiceDropdownOpen, setIsEmployeeServiceDropdownOpen] = useState(false);
+  const [isCustomEmployeeService, setIsCustomEmployeeService] = useState(false);
+  const [customEmployeeService, setCustomEmployeeService] = useState("");
 
   const [federalState, setFederalState] = useState("");
 
@@ -96,6 +100,9 @@ export function Settings() {
 
   const [isDeleteAbsenceModalOpen, setIsDeleteAbsenceModalOpen] = useState(false);
   const [absenceToDelete, setAbsenceToDelete] = useState<any>(null);
+  const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
+  const [editingAbsenceId, setEditingAbsenceId] = useState<string | null>(null);
+  const [absenceData, setAbsenceData] = useState({ employeeId: "", type: "Urlaub", startDate: "", endDate: "" });
 
   const [isDeleteServiceModalOpen, setIsDeleteServiceModalOpen] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<string | null>(null);
@@ -128,6 +135,7 @@ export function Settings() {
           setTwilioToken(data.twilioToken || "");
           setTwilioPhone(data.twilioPhone || "");
           setSlotInterval(data.slotInterval || "30");
+          setNotificationExpiryMinutes(data.notificationExpiryMinutes || "60");
           setFederalState(data.federalState || "");
           setIsInitialized(true);
         } else {
@@ -157,16 +165,38 @@ export function Settings() {
   };
 
   const handleRemoveService = async () => {
-    if (!serviceToDelete) return;
+    if (!serviceToDelete || !businessId) return;
     const updatedServices = services.filter((s) => s !== serviceToDelete);
     setServices(updatedServices);
     setIsDeleteServiceModalOpen(false);
-    setServiceToDelete(null);
     
-    if (businessId) {
+    try {
+      // 1. Update business document
       await updateDoc(doc(db, "businesses", businessId), {
         serviceTypes: updatedServices
       });
+
+      // 2. Update all clients who have this service
+      const clientsSnap = await getDocs(collection(db, `businesses/${businessId}/clients`));
+      const batch = writeBatch(db);
+      let hasChanges = false;
+
+      clientsSnap.docs.forEach(clientDoc => {
+        const clientData = clientDoc.data();
+        if (clientData.serviceTypes && clientData.serviceTypes.includes(serviceToDelete)) {
+          const newClientServices = clientData.serviceTypes.filter((s: string) => s !== serviceToDelete);
+          batch.update(clientDoc.ref, { serviceTypes: newClientServices });
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        await batch.commit();
+      }
+    } catch (error) {
+      console.error("Error removing service and syncing clients:", error);
+    } finally {
+      setServiceToDelete(null);
     }
   };
 
@@ -199,11 +229,25 @@ export function Settings() {
   const handleSaveEmployee = async () => {
     if (!businessId || !employeeName.trim()) return;
     
+    let finalServices = [...employeeServices];
+    if (isCustomEmployeeService && customEmployeeService.trim()) {
+      if (!finalServices.includes(customEmployeeService.trim())) {
+        finalServices.push(customEmployeeService.trim());
+      }
+      
+      // Also add to business services if not exists
+      if (!services.includes(customEmployeeService.trim())) {
+        const updatedBusinessServices = [...services, customEmployeeService.trim()];
+        setServices(updatedBusinessServices);
+        await updateDoc(doc(db, "businesses", businessId), { serviceTypes: updatedBusinessServices });
+      }
+    }
+
     let updatedEmployees;
     if (editingEmployeeId) {
       updatedEmployees = employees.map(emp => 
         emp.id === editingEmployeeId 
-          ? { ...emp, name: employeeName.trim(), phone: employeePhone.trim(), serviceTypes: employeeServices, workingHours: employeeHours }
+          ? { ...emp, name: employeeName.trim(), phone: employeePhone.trim(), serviceTypes: finalServices, workingHours: employeeHours }
           : emp
       );
     } else {
@@ -211,7 +255,7 @@ export function Settings() {
         id: Date.now().toString(),
         name: employeeName.trim(),
         phone: employeePhone.trim(),
-        serviceTypes: employeeServices,
+        serviceTypes: finalServices,
         workingHours: employeeHours
       };
       updatedEmployees = [...employees, newEmployee];
@@ -219,6 +263,8 @@ export function Settings() {
     
     setEmployees(updatedEmployees);
     setIsEmployeeModalOpen(false);
+    setIsCustomEmployeeService(false);
+    setCustomEmployeeService("");
     
     await updateDoc(doc(db, "businesses", businessId), { employees: updatedEmployees });
   };
@@ -234,18 +280,6 @@ export function Settings() {
     }
   };
 
-  const handleAddAbsence = async () => {
-    if (newAbsence.employeeId && newAbsence.startDate && newAbsence.endDate) {
-      const absence = { id: Date.now().toString(), ...newAbsence };
-      const updatedAbsences = [...absences, absence];
-      setAbsences(updatedAbsences);
-      setNewAbsence({ employeeId: "", type: "Urlaub", startDate: "", endDate: "" });
-      if (businessId) {
-        await updateDoc(doc(db, "businesses", businessId), { absences: updatedAbsences });
-      }
-    }
-  };
-
   const handleRemoveAbsence = async () => {
     if (!absenceToDelete) return;
     const updatedAbsences = absences.filter((a) => a.id !== absenceToDelete.id);
@@ -255,6 +289,43 @@ export function Settings() {
     if (businessId) {
       await updateDoc(doc(db, "businesses", businessId), { absences: updatedAbsences });
     }
+  };
+
+  const handleEditAbsence = (abs: any) => {
+    setEditingAbsenceId(abs.id);
+    setAbsenceData({
+      employeeId: abs.employeeId,
+      type: abs.type,
+      startDate: abs.startDate,
+      endDate: abs.endDate
+    });
+    setIsAbsenceModalOpen(true);
+  };
+
+  const handleSaveAbsence = async () => {
+    if (!businessId || !absenceData.employeeId || !absenceData.startDate || !absenceData.endDate) return;
+    
+    let updatedAbsences;
+    if (editingAbsenceId) {
+      updatedAbsences = absences.map(abs => 
+        abs.id === editingAbsenceId 
+          ? { ...abs, ...absenceData }
+          : abs
+      );
+    } else {
+      const newAbsenceEntry = {
+        id: Date.now().toString(),
+        ...absenceData
+      };
+      updatedAbsences = [...absences, newAbsenceEntry];
+    }
+    
+    setAbsences(updatedAbsences);
+    setIsAbsenceModalOpen(false);
+    setEditingAbsenceId(null);
+    setAbsenceData({ employeeId: "", type: "Urlaub", startDate: "", endDate: "" });
+    
+    await updateDoc(doc(db, "businesses", businessId), { absences: updatedAbsences });
   };
 
   const handleUnlockTwilio = (e: FormEvent) => {
@@ -300,7 +371,7 @@ export function Settings() {
         <p className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mt-2">Systemeinstellungen & Anbieter-Anbindung</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="flex flex-col gap-8">
         <div className="space-y-8">
           {/* Unternehmensprofil */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800 relative">
@@ -395,6 +466,26 @@ export function Settings() {
                   <option value="60">60 Minuten</option>
                 </select>
               </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Benachrichtigungs-Ablaufzeit (Minuten vor Termin)</label>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">
+                  Wie viele Minuten vor dem Termin sollen Kunden, die benachrichtigt wurden, die Info erhalten, dass der Termin nicht mehr verfügbar ist?
+                </p>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  value={notificationExpiryMinutes}
+                  onChange={(e) => {
+                    setNotificationExpiryMinutes(e.target.value);
+                    updateBusiness({ notificationExpiryMinutes: e.target.value });
+                  }}
+                >
+                  <option value="15">15 Minuten</option>
+                  <option value="30">30 Minuten</option>
+                  <option value="60">60 Minuten (1 Stunde)</option>
+                  <option value="120">120 Minuten (2 Stunden)</option>
+                  <option value="1440">1440 Minuten (24 Stunden)</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -442,7 +533,8 @@ export function Settings() {
               />
             </div>
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-              {employees
+              {[...employees]
+                .sort((a, b) => a.name.localeCompare(b))
                 .filter(emp => emp.name.toLowerCase().includes(employeeSearch.toLowerCase()))
                 .map((emp) => (
                 <div key={emp.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700" onClick={() => handleEditEmployee(emp)}>
@@ -488,7 +580,12 @@ export function Settings() {
               />
             </div>
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-              {absences
+              {[...absences]
+                .sort((a, b) => {
+                  const empA = employees.find(e => e.id === a.employeeId)?.name || "";
+                  const empB = employees.find(e => e.id === b.employeeId)?.name || "";
+                  return empA.localeCompare(empB) || a.startDate.localeCompare(b.startDate);
+                })
                 .filter(abs => {
                   const emp = employees.find(e => e.id === abs.employeeId);
                   const searchLower = absenceSearch.toLowerCase();
@@ -502,50 +599,39 @@ export function Settings() {
                 .map((abs) => {
                 const emp = employees.find(e => e.id === abs.employeeId);
                 return (
-                  <div key={abs.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
+                  <div key={abs.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700" onClick={() => handleEditAbsence(abs)}>
                     <div>
                       <span className="font-medium text-deep-blue dark:text-white block">{emp?.name || 'Unbekannt'} - {abs.type}</span>
-                      <span className="text-xs text-gray-500 dark:text-gray-400">{abs.startDate} bis {abs.endDate}</span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {format(new Date(abs.startDate), 'dd.MM.yyyy')} bis {format(new Date(abs.endDate), 'dd.MM.yyyy')}
+                      </span>
                     </div>
-                    <button onClick={() => {
-                      setAbsenceToDelete(abs);
-                      setIsDeleteAbsenceModalOpen(true);
-                    }} className="text-gray-400 hover:text-red-500">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={(e) => { e.stopPropagation(); handleEditAbsence(abs); }} className="text-gray-400 hover:text-accent">
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button onClick={(e) => { 
+                        e.stopPropagation(); 
+                        setAbsenceToDelete(abs);
+                        setIsDeleteAbsenceModalOpen(true);
+                      }} className="text-gray-400 hover:text-red-500">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
-            <div className="space-y-3 border-t border-gray-100 dark:border-slate-800 pt-4">
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newAbsence.employeeId}
-                onChange={(e) => setNewAbsence({...newAbsence, employeeId: e.target.value})}
+            <div className="border-t border-gray-100 dark:border-slate-800 pt-4">
+              <Button 
+                onClick={() => {
+                  setEditingAbsenceId(null);
+                  setAbsenceData({ employeeId: "", type: "Urlaub", startDate: "", endDate: "" });
+                  setIsAbsenceModalOpen(true);
+                }} 
+                className="w-full bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold"
               >
-                <option value="">Mitarbeiter auswählen...</option>
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-              </select>
-              <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                value={newAbsence.type}
-                onChange={(e) => setNewAbsence({...newAbsence, type: e.target.value})}
-              >
-                <option value="Urlaub">Urlaub</option>
-                <option value="Krankheit">Krankheit</option>
-              </select>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Von</label>
-                  <Input type="date" value={newAbsence.startDate} onChange={(e) => setNewAbsence({...newAbsence, startDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Bis</label>
-                  <Input type="date" value={newAbsence.endDate} onChange={(e) => setNewAbsence({...newAbsence, endDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
-                </div>
-              </div>
-              <Button onClick={handleAddAbsence} className="w-full bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold">
-                Abwesenheit eintragen
+                <Plus className="h-4 w-4 mr-2" /> Abwesenheit eintragen
               </Button>
             </div>
           </div>
@@ -566,7 +652,8 @@ export function Settings() {
               />
             </div>
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-              {services
+              {[...services]
+                .sort((a, b) => a.localeCompare(b))
                 .filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase()))
                 .map((service) => (
                 <div key={service} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
@@ -711,21 +798,52 @@ export function Settings() {
           
           <div>
             <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistungen</label>
-            <div className="flex flex-wrap gap-2">
-              {services.map(service => (
-                <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+            <button
+              type="button"
+              onClick={() => setIsEmployeeServiceDropdownOpen(!isEmployeeServiceDropdownOpen)}
+              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white mb-2"
+            >
+              <span>
+                {employeeServices.length > 0 
+                  ? `${employeeServices.length} ausgewählt` 
+                  : (isCustomEmployeeService ? "Individuell..." : "Dienstleistungen auswählen")}
+              </span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${isEmployeeServiceDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isEmployeeServiceDropdownOpen && (
+              <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
+                {[...services].sort((a, b) => a.localeCompare(b)).map(service => (
+                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={employeeServices.includes(service)}
+                      onChange={() => setEmployeeServices(prev => 
+                        prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
+                      )}
+                      className="accent-accent shrink-0"
+                    />
+                    <span className="truncate">{service}</span>
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
                   <input
                     type="checkbox"
-                    checked={employeeServices.includes(service)}
-                    onChange={() => setEmployeeServices(prev => 
-                      prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
-                    )}
+                    checked={isCustomEmployeeService}
+                    onChange={() => setIsCustomEmployeeService(!isCustomEmployeeService)}
                     className="accent-accent shrink-0"
                   />
-                  <span>{service}</span>
+                  <span className="truncate">Individuell...</span>
                 </label>
-              ))}
-            </div>
+              </div>
+            )}
+            {isCustomEmployeeService && (
+              <Input 
+                placeholder="Eigene Dienstleistung..." 
+                value={customEmployeeService}
+                onChange={(e) => setCustomEmployeeService(e.target.value)}
+                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            )}
           </div>
 
           <div>
@@ -806,6 +924,52 @@ export function Settings() {
               onClick={handleRemoveEmployee}
             >
               Endgültig löschen
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isAbsenceModalOpen} onClose={() => setIsAbsenceModalOpen(false)} title={editingAbsenceId ? "Abwesenheit bearbeiten" : "Abwesenheit eintragen"}>
+        <div className="space-y-6">
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter</label>
+            <select 
+              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+              value={absenceData.employeeId}
+              onChange={(e) => setAbsenceData({...absenceData, employeeId: e.target.value})}
+            >
+              <option value="">Mitarbeiter auswählen...</option>
+              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Typ</label>
+            <select 
+              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+              value={absenceData.type}
+              onChange={(e) => setAbsenceData({...absenceData, type: e.target.value})}
+            >
+              <option value="Urlaub">Urlaub</option>
+              <option value="Krankheit">Krankheit</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Von</label>
+              <Input type="date" value={absenceData.startDate} onChange={(e) => setAbsenceData({...absenceData, startDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Bis</label>
+              <Input type="date" value={absenceData.endDate} onChange={(e) => setAbsenceData({...absenceData, endDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+            </div>
+          </div>
+
+          <div className="pt-4 flex gap-3">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsAbsenceModalOpen(false)}>Abbrechen</Button>
+            <Button className="flex-1 bg-deep-blue dark:bg-accent text-white hover:bg-gray-800 dark:hover:bg-accent-hover font-bold" onClick={handleSaveAbsence}>
+              Speichern
             </Button>
           </div>
         </div>

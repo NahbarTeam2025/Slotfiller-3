@@ -120,7 +120,7 @@ export function Layout() {
           {!isSidebarCollapsed && (
             <div className="transition-opacity duration-300">
               <h1 className="text-2xl font-bold text-deep-blue tracking-tight">{businessName}</h1>
-              <div className="text-xs font-bold text-gray-400 mt-2 uppercase tracking-widest">
+              <div className="text-xs font-bold text-gray-400 mt-2 uppercase tracking-widest whitespace-nowrap overflow-hidden">
                 {format(currentTime, "dd.MM.yyyy - HH:mm", { locale: de })} Uhr
               </div>
             </div>
@@ -143,7 +143,7 @@ export function Layout() {
             <LayoutDashboard className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Übersicht
             </span>
@@ -163,7 +163,7 @@ export function Layout() {
             <Calendar className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Kalender
             </span>
@@ -184,7 +184,7 @@ export function Layout() {
               <Bell className="h-5 w-5 shrink-0" />
               <span className={cn(
                 "transition-all duration-300 whitespace-nowrap overflow-hidden",
-                isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+                isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
               )}>
                 Benachrichtigungen
               </span>
@@ -213,7 +213,7 @@ export function Layout() {
             <Users className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Kunden
             </span>
@@ -233,7 +233,7 @@ export function Layout() {
             <StickyNote className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Notizen
             </span>
@@ -253,7 +253,7 @@ export function Layout() {
             <Settings className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 delay-150"
+              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Einstellungen
             </span>
