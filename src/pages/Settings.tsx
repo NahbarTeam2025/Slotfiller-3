@@ -89,6 +89,7 @@ export function Settings() {
   const [customEmployeeService, setCustomEmployeeService] = useState("");
 
   const [federalState, setFederalState] = useState("");
+  const [appointmentStatusDelay, setAppointmentStatusDelay] = useState("0");
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [twilioPasswordInput, setTwilioPasswordInput] = useState("");
@@ -106,6 +107,32 @@ export function Settings() {
 
   const [isDeleteServiceModalOpen, setIsDeleteServiceModalOpen] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<string | null>(null);
+  const [editingService, setEditingService] = useState<string | null>(null);
+  const [editedServiceName, setEditedServiceName] = useState("");
+
+  const handleEditService = (service: string) => {
+    setEditingService(service);
+    setEditedServiceName(service);
+  };
+
+  const handleSaveService = async (oldName: string) => {
+    if (!businessId || !editedServiceName.trim() || editedServiceName === oldName) {
+      setEditingService(null);
+      return;
+    }
+    const updatedServices = services.map(s => s === oldName ? editedServiceName.trim() : s);
+    setServices(updatedServices);
+    setEditingService(null);
+    
+    try {
+      await updateDoc(doc(db, "businesses", businessId), {
+        serviceTypes: updatedServices
+      });
+      // Optionally update clients
+    } catch (error) {
+      console.error("Error updating service:", error);
+    }
+  };
 
   useEffect(() => {
     if (!businessId) return;
@@ -137,6 +164,7 @@ export function Settings() {
           setSlotInterval(data.slotInterval || "30");
           setNotificationExpiryMinutes(data.notificationExpiryMinutes || "60");
           setFederalState(data.federalState || "");
+          setAppointmentStatusDelay(data.appointmentStatusDelay || "0");
           setIsInitialized(true);
         } else {
           // Keep services in sync since they can be added/removed directly
@@ -349,6 +377,7 @@ export function Settings() {
         openingHours,
         serviceTypes: services,
         slotInterval,
+        appointmentStatusDelay,
         twilioSid,
         twilioToken,
         twilioPhone
@@ -376,7 +405,7 @@ export function Settings() {
           {/* Unternehmensprofil */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800 relative">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">Unternehmensprofil</h3>
+              <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Unternehmensprofil</h3>
               {isSaving && <span className="text-[10px] font-bold text-accent animate-pulse uppercase tracking-widest">Speichert...</span>}
               {saveSuccess && <span className="text-[10px] font-bold text-green-500 uppercase tracking-widest">Gespeichert</span>}
             </div>
@@ -448,7 +477,7 @@ export function Settings() {
 
           {/* Kalender Einstellungen */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Kalender Einstellungen</h3>
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Kalender Einstellungen</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Taktung der Termine (Minuten)</label>
@@ -464,6 +493,26 @@ export function Settings() {
                   <option value="15">15 Minuten</option>
                   <option value="30">30 Minuten</option>
                   <option value="60">60 Minuten</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Terminstatus Verzögerung (Kundenliste)</label>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">
+                  Wie lange soll ein Termin in der Kundenliste noch als "Ja" angezeigt werden, nachdem die Uhrzeit bereits vergangen ist?
+                </p>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  value={appointmentStatusDelay}
+                  onChange={(e) => {
+                    setAppointmentStatusDelay(e.target.value);
+                    updateBusiness({ appointmentStatusDelay: e.target.value });
+                  }}
+                >
+                  <option value="0">Sofort</option>
+                  <option value="5">5 Minuten</option>
+                  <option value="10">10 Minuten</option>
+                  <option value="15">15 Minuten</option>
+                  <option value="30">30 Minuten</option>
                 </select>
               </div>
               <div>
@@ -491,7 +540,7 @@ export function Settings() {
 
           {/* Feiertage (Bundesland Auswahl) */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Feiertage</h3>
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Feiertage</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie Ihr Bundesland aus, um Feiertage automatisch im Kalender anzuzeigen.</p>
             <select 
               className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
@@ -523,7 +572,7 @@ export function Settings() {
 
           {/* Mitarbeiter Verwalten */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Mitarbeiter</h3>
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Mitarbeiter</h3>
             <div className="mb-4">
               <Input
                 value={employeeSearch}
@@ -570,7 +619,7 @@ export function Settings() {
 
           {/* Abwesenheiten (Urlaub, Krankheit, Feiertage) */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Abwesenheiten (Urlaub, Krankheit)</h3>
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Abwesenheiten (Urlaub, Krankheit)</h3>
             <div className="mb-4">
               <Input
                 value={absenceSearch}
@@ -641,7 +690,7 @@ export function Settings() {
           {/* Dienstleistungen verwalten */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">Dienstleistungen verwalten</h3>
+              <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Dienstleistungen verwalten</h3>
             </div>
             <div className="mb-4">
               <Input
@@ -657,13 +706,29 @@ export function Settings() {
                 .filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase()))
                 .map((service) => (
                 <div key={service} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
-                  <span className="font-medium text-deep-blue dark:text-white">{service}</span>
-                  <button onClick={() => {
-                    setServiceToDelete(service);
-                    setIsDeleteServiceModalOpen(true);
-                  }} className="text-gray-400 hover:text-red-500">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {editingService === service ? (
+                    <Input
+                      value={editedServiceName}
+                      onChange={(e) => setEditedServiceName(e.target.value)}
+                      onBlur={() => handleSaveService(service)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveService(service)}
+                      className="h-8 text-sm"
+                      autoFocus
+                    />
+                  ) : (
+                    <span className="font-medium text-deep-blue dark:text-white">{service}</span>
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={() => handleEditService(service)} className="text-gray-400 hover:text-accent">
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => {
+                      setServiceToDelete(service);
+                      setIsDeleteServiceModalOpen(true);
+                    }} className="text-gray-400 hover:text-red-500">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
               {services.filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase())).length === 0 && (
@@ -693,7 +758,7 @@ export function Settings() {
                 </div>
               </div>
               <div>
-                <h3 className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">SMS-Anbieter (Twilio)</h3>
+                <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">SMS-Anbieter (Twilio)</h3>
                 <p className="font-bold text-deep-blue dark:text-white">Twilio Verbindung</p>
               </div>
             </div>

@@ -438,13 +438,13 @@ export function Calendar() {
 
         days.push(
           <div
-            className={`p-2 border cursor-pointer flex flex-col items-center justify-center h-16 transition-all rounded-lg
+            className={`p-2 border cursor-pointer flex flex-col items-center justify-center h-10 transition-all rounded-lg
               ${!isSameMonth(day, monthStart) 
                 ? "text-gray-300 bg-gray-50/50 border-transparent" 
                 : isSameDay(day, new Date())
                   ? "bg-success-green text-white shadow-md z-10 border-success-green"
                   : holiday
-                    ? "bg-yellow-100 dark:bg-yellow-900/40 border-yellow-200 dark:border-yellow-800 text-yellow-900 dark:text-yellow-200"
+                    ? "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-100 dark:border-yellow-900/30 text-yellow-700 dark:text-yellow-400"
                     : isSameDay(day, selectedDate)
                       ? "bg-indigo-50 dark:bg-slate-800 text-deep-blue dark:text-white"
                       : "text-gray-700 dark:text-gray-300 border-gray-100 dark:border-slate-800 hover:bg-indigo-50 dark:hover:bg-slate-800"}
@@ -453,11 +453,6 @@ export function Calendar() {
             onClick={() => onDateClick(cloneDay)}
           >
             <span className="text-sm font-bold">{formattedDate}</span>
-            {holiday && (
-              <span className="text-[8px] font-bold uppercase truncate w-full text-center mt-1">
-                {Array.isArray(holiday) ? holiday[0].name : holiday.name}
-              </span>
-            )}
           </div>
         );
         day = addDays(day, 1);
@@ -579,9 +574,9 @@ export function Calendar() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="flex flex-col gap-8">
         {/* Calendar View */}
-        <div className="lg:col-span-1">
+        <div className="w-full">
           <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-deep-blue dark:text-white">{monthName} {year}</h2>
@@ -604,7 +599,7 @@ export function Calendar() {
         </div>
 
         {/* Slots List */}
-        <div className="lg:col-span-2">
+        <div className="w-full">
           <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50">
               <h3 className="text-lg font-bold text-deep-blue dark:text-white">
@@ -783,28 +778,18 @@ export function Calendar() {
                 ))}
               </div>
             </div>
-            <div className="relative">
+            <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
-              <button
-                type="button"
-                onClick={() => setIsSlotServiceDropdownOpen(!isSlotServiceDropdownOpen)}
-                className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white mb-2"
-              >
-                <span>{isCustomService ? "Individuell..." : (newSlotService || "Dienstleistung auswählen")}</span>
-                <ChevronDown className={`h-4 w-4 transition-transform ${isSlotServiceDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {isSlotServiceDropdownOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-[220px] flex flex-col">
-                  <div className="p-2 border-b border-gray-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-20">
-                    <Input
-                      placeholder="Dienstleistung suchen..."
-                      value={slotServiceSearch}
-                      onChange={(e) => setSlotServiceSearch(e.target.value)}
-                      className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                      autoFocus
-                    />
-                  </div>
-                  <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin">
+              <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+                <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                  <Input
+                    placeholder="Dienstleistung suchen..."
+                    value={slotServiceSearch}
+                    onChange={(e) => setSlotServiceSearch(e.target.value)}
+                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
                   {[...business?.serviceTypes || []]
                     .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
                     .sort((a, b) => a.localeCompare(b))
@@ -814,7 +799,6 @@ export function Calendar() {
                       onClick={() => {
                         setIsCustomService(false);
                         setNewSlotService(service);
-                        setIsSlotServiceDropdownOpen(false);
                         setSlotServiceSearch("");
                       }}
                       className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
@@ -826,12 +810,11 @@ export function Calendar() {
                       {service}
                     </button>
                   ))}
-                  </div>
-                  <div className="p-2 border-t border-gray-100 dark:border-slate-700 sticky bottom-0 bg-white dark:bg-slate-800 z-20">
+                </div>
+                <div className="p-2 border-t border-gray-100 dark:border-slate-700">
                     <button
                       onClick={() => {
                         setIsCustomService(true);
-                        setIsSlotServiceDropdownOpen(false);
                         setSlotServiceSearch("");
                       }}
                       className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
@@ -842,9 +825,8 @@ export function Calendar() {
                     >
                       Individuell...
                     </button>
-                  </div>
                 </div>
-              )}
+              </div>
               {isCustomService && (
                 <Input 
                   placeholder="Eigene Dienstleistung..." 

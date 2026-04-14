@@ -26,7 +26,6 @@ export function Dashboard() {
   const [newSlotEmployee, setNewSlotEmployee] = useState("");
   const [clientName, setClientName] = useState("");
   const [clients, setClients] = useState<any[]>([]);
-  const [showClientDropdown, setShowClientDropdown] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [isNotifiedClientsModalOpen, setIsNotifiedClientsModalOpen] = useState(false);
@@ -714,7 +713,7 @@ export function Dashboard() {
                         }}
                       >
                         <span className="text-xs font-bold flex items-center">
-                          <Clock className="w-3 h-3 mr-1" /> Freien Platz melden
+                          <Clock className="w-3 h-3 mr-1" /> Freien Termin melden
                         </span>
                       </div>
                     </div>
@@ -732,16 +731,10 @@ export function Dashboard() {
         setEditingSlotId(null);
         setIsCustomService(false);
         setCustomService("");
-      }} title={isEditMode ? "Termin bearbeiten" : "Gebuchten Termin eintragen"}>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-          {isEditMode 
-            ? "Passen Sie die Details des gebuchten Termins an." 
-            : "Tragen Sie hier einen Termin ein, der bereits fest vergeben ist."}
-        </p>
-        
+      }} title={isEditMode ? "Termin bearbeiten" : "Termin eintragen"}>
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Datum</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
             <Input 
               type="date" 
               value={newSlotDate} 
@@ -750,7 +743,7 @@ export function Dashboard() {
             />
           </div>
                 <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Uhrzeit</label>
               <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
                 {timeSlots.map((time) => (
                   <button
@@ -768,7 +761,7 @@ export function Dashboard() {
               </div>
             </div>
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistung</label>
               <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
                 <div className="p-2 border-b border-gray-100 dark:border-slate-700">
                   <Input
@@ -821,13 +814,13 @@ export function Dashboard() {
                   placeholder="Eigene Dienstleistung..." 
                   value={customService}
                   onChange={(e) => setCustomService(e.target.value)}
-                  className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  className="mt-2 mb-6 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                 />
               )}
             </div>  </div>
 
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
+          <div className="mt-8">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
             <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
               <div className="p-2 border-b border-gray-100 dark:border-slate-700">
                 <Input
@@ -868,46 +861,41 @@ export function Dashboard() {
             </div>
           </div>
 
-          <div className="relative">
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Name des Kunden</label>
-              <Input 
-                value={clientName} 
-                onChange={(e) => {
-                  setClientName(e.target.value);
-                  setShowClientDropdown(true);
-                }}
-                onFocus={() => setShowClientDropdown(true)}
-                onBlur={() => setTimeout(() => setShowClientDropdown(false), 200)}
-                placeholder="z.B. Anna Schmidt"
-                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-              {showClientDropdown && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                  {clients
-                    .filter(c => c.name.toLowerCase().includes(clientName.toLowerCase()))
-                    .map(client => (
-                    <div 
-                      key={client.id} 
-                      className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-deep-blue dark:text-white flex justify-between items-center"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setClientName(client.name);
-                        setShowClientDropdown(false);
-                      }}
-                    >
-                      <span>{client.name}</span>
-                      <span className="text-gray-400 dark:text-gray-500 text-xs">{client.phone}</span>
-                    </div>
-                  ))}
-                  {clients.filter(c => c.name.toLowerCase().includes(clientName.toLowerCase())).length === 0 && (
-                    <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">Keine passenden Kunden gefunden</div>
-                  )}
-                </div>
-              )}
+          <div className="mt-8">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name des Kunden</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Kunde suchen..."
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {clients
+                  .filter(c => c.name.toLowerCase().includes(clientName.toLowerCase()))
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((client: any) => (
+                  <button
+                    key={client.id}
+                    onClick={() => setClientName(client.name)}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors flex justify-between items-center ${
+                      clientName === client.name
+                        ? 'bg-accent/20 text-deep-blue dark:text-white'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>{client.name}</span>
+                    <span className="text-gray-400 dark:text-gray-500 text-xs">{client.phone}</span>
+                  </button>
+                ))}
+                {clients.filter(c => c.name.toLowerCase().includes(clientName.toLowerCase())).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-400">Kein Kunde gefunden</div>
+                )}
+              </div>
             </div>
-
-          {/* Add extra space if dropdown is open to prevent cutting off */}
-          {showClientDropdown && <div className="h-32" />}
+          </div>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
             <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsModalOpen(false)}>Abbrechen</Button>
@@ -1172,7 +1160,7 @@ export function Dashboard() {
                     }}
                   >
                     <span className="text-xs font-bold flex items-center">
-                      <Clock className="w-3 h-3 mr-1" /> Freien Platz melden
+                      <Clock className="w-3 h-3 mr-1" /> Freien Termin melden
                     </span>
                   </div>
                 </div>
@@ -1192,12 +1180,10 @@ export function Dashboard() {
         setIsCreateFreeSlotModalOpen(false);
         setIsCustomFreeService(false);
         setCustomFreeService("");
-      }} title="Neuer freier Slot">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Melden Sie einen freien Slot, um sofort passende Kunden zu benachrichtigen.</p>
-        
+      }} title="Freien Termin melden">
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Datum</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
             <Input 
               type="date" 
               value={newSlotDate} 
@@ -1207,9 +1193,8 @@ export function Dashboard() {
             />
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="mb-6">
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Uhrzeit</label>
             <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
               {generateTimeSlots().map((time) => (
                 <button
@@ -1226,8 +1211,9 @@ export function Dashboard() {
               ))}
             </div>
           </div>
+          
           <div className="mb-6">
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistungen</label>
             <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
               <div className="p-2 border-b border-gray-100 dark:border-slate-700">
                 <Input
@@ -1242,37 +1228,36 @@ export function Dashboard() {
                   .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
                   .sort((a, b) => a.localeCompare(b))
                   .map((service: string) => (
-                  <button
+                  <label
                     key={service}
-                    onClick={() => {
-                      setIsCustomFreeService(false);
-                      setNewSlotServices([service]);
-                      setSlotServiceSearch("");
-                    }}
-                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                      !isCustomFreeService && newSlotServices.includes(service) 
-                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
+                    className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
                   >
-                    {service}
-                  </button>
+                    <input
+                      type="checkbox"
+                      checked={newSlotServices.includes(service)}
+                      onChange={() => {
+                        if (newSlotServices.includes(service)) {
+                          setNewSlotServices(newSlotServices.filter(s => s !== service));
+                        } else {
+                          setNewSlotServices([...newSlotServices, service]);
+                        }
+                      }}
+                      className="accent-accent"
+                    />
+                    <span>{service}</span>
+                  </label>
                 ))}
               </div>
               <div className="p-2 border-t border-gray-100 dark:border-slate-700">
-                  <button
-                    onClick={() => {
-                      setIsCustomFreeService(true);
-                      setSlotServiceSearch("");
-                    }}
-                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                      isCustomFreeService 
-                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    Individuell...
-                  </button>
+                  <label className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isCustomFreeService}
+                      onChange={() => setIsCustomFreeService(!isCustomFreeService)}
+                      className="accent-accent"
+                    />
+                    <span>Individuell...</span>
+                  </label>
               </div>
             </div>
             {isCustomFreeService && (
@@ -1280,14 +1265,13 @@ export function Dashboard() {
                 placeholder="Eigene Dienstleistung..." 
                 value={customFreeService}
                 onChange={(e) => setCustomFreeService(e.target.value)}
-                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                className="mt-2 mb-6 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
               />
             )}
           </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
+          
+          <div className="mt-8">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
             <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
               <div className="p-2 border-b border-gray-100 dark:border-slate-700">
                 <Input
@@ -1310,7 +1294,7 @@ export function Dashboard() {
                 </button>
                 {[...business?.employees || []]
                   .filter(e => e.name.toLowerCase().includes(slotEmployeeSearch.toLowerCase()))
-                  .sort((a, b) => a.name.localeCompare(b))
+                  .sort((a, b) => a.name.localeCompare(b.name))
                   .map((emp: any) => (
                   <button
                     key={emp.id}
@@ -1336,7 +1320,7 @@ export function Dashboard() {
               className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
             />
             <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">Passende Kunden ({matchingClients.length})</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Passende Kunden ({matchingClients.length})</label>
               <button 
                 onClick={() => setSelectedClients(selectedClients.length === matchingClients.length ? [] : matchingClients.map(c => c.id))}
                 className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"

@@ -272,13 +272,16 @@ export function Clients() {
     .filter(client => {
       const nameStr = client.name || "";
       const phoneStr = client.phone || "";
-      const matchesSearch = nameStr.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      const matchesSearch = nameStr.toLowerCase().startsWith(searchQuery.toLowerCase()) || 
                             phoneStr.includes(searchQuery);
       const matchesService = filterService === "all" || (client.serviceTypes && client.serviceTypes.includes(filterService));
       
       const now = new Date();
-      const nowString = format(now, 'yyyy-MM-dd');
-      const nowTime = format(now, 'HH:mm');
+      const delayMinutes = parseInt(business?.appointmentStatusDelay || "0");
+      const effectiveNow = new Date(now.getTime() - delayMinutes * 60000);
+      
+      const nowString = format(effectiveNow, 'yyyy-MM-dd');
+      const nowTime = format(effectiveNow, 'HH:mm');
       
       const clientAppointments = slots.filter(s => 
         s.bookedBy === nameStr && 
@@ -318,16 +321,34 @@ export function Clients() {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
-            value={filterService}
-            onChange={(e) => setFilterService(e.target.value)}
-          >
-            <option value="all">Alle Dienstleistungen</option>
-            {business?.serviceTypes?.map((service: string) => (
-              <option key={service} value={service}>{service}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <button
+              onClick={() => setIsSlotServiceDropdownOpen(!isSlotServiceDropdownOpen)}
+              className="h-10 w-full flex items-center justify-between rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
+            >
+              <span>{filterService === "all" ? "Alle Dienstleistungen" : filterService}</span>
+              <ChevronDown className="h-4 w-4" />
+            </button>
+            {isSlotServiceDropdownOpen && (
+              <div className="absolute z-20 w-full mt-1 bg-white dark:bg-card-dark border border-gray-200 dark:border-slate-800 rounded-md shadow-lg max-h-[200px] overflow-y-auto scrollbar-thin">
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-slate-800"
+                  onClick={() => { setFilterService("all"); setIsSlotServiceDropdownOpen(false); }}
+                >
+                  Alle Dienstleistungen
+                </button>
+                {business?.serviceTypes?.map((service: string) => (
+                  <button
+                    key={service}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-slate-800"
+                    onClick={() => { setFilterService(service); setIsSlotServiceDropdownOpen(false); }}
+                  >
+                    {service}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <select 
             className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
             value={filterTime}
@@ -364,8 +385,11 @@ export function Clients() {
             <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
               {filteredClients.map((client) => {
                 const now = new Date();
-                const nowString = format(now, 'yyyy-MM-dd');
-                const nowTime = format(now, 'HH:mm');
+                const delayMinutes = parseInt(business?.appointmentStatusDelay || "0");
+                const effectiveNow = new Date(now.getTime() - delayMinutes * 60000);
+                
+                const nowString = format(effectiveNow, 'yyyy-MM-dd');
+                const nowTime = format(effectiveNow, 'HH:mm');
                 const clientAppointments = slots.filter(s => 
                   s.bookedBy === client.name && 
                   (s.date > nowString || (s.date === nowString && s.time >= nowTime))
@@ -396,12 +420,15 @@ export function Clients() {
                     </div>
                   </td>
                   <td className="px-6 py-4 hidden sm:table-cell">
-                    <div className="flex flex-wrap gap-2">
-                      {client.serviceTypes.map((s: string) => (
+                    <div className="flex flex-wrap gap-2 max-h-[100px] overflow-y-auto scrollbar-thin">
+                      {client.serviceTypes.slice(0, 5).map((s: string) => (
                         <span key={s} className="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider rounded">
                           {s}
                         </span>
                       ))}
+                      {client.serviceTypes.length > 5 && (
+                        <span className="text-xs text-gray-400">+{client.serviceTypes.length - 5}</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4 hidden md:table-cell">
@@ -456,7 +483,7 @@ export function Clients() {
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={isEditMode ? "Kunde bearbeiten" : "Kunde hinzufügen"}>
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Vollständiger Name</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name</label>
             <Input 
               value={name} 
               onChange={(e) => setName(e.target.value)}
@@ -466,7 +493,7 @@ export function Clients() {
           </div>
           
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Telefonnummer</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Telefon</label>
             <Input 
               value={phone} 
               onChange={(e) => setPhone(e.target.value)}
@@ -476,21 +503,34 @@ export function Clients() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Gewünschte Services</label>
-            <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
-              {[...business?.serviceTypes || []].sort((a, b) => a.localeCompare(b)).map((service: string) => (
-                <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={selectedServices.includes(service)}
-                    onChange={() => toggleService(service)}
-                    className="accent-accent shrink-0"
-                  />
-                  <span className="truncate">{service}</span>
-                </label>
-              ))}
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistungen</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Dienstleistung suchen..."
+                  value={customService} // Reusing customService state for search if needed, or add new state
+                  onChange={(e) => setCustomService(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {[...business?.serviceTypes || []]
+                  .filter(s => s.toLowerCase().includes(customService.toLowerCase()))
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((service: string) => (
+                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedServices.includes(service)}
+                      onChange={() => toggleService(service)}
+                      className="accent-accent shrink-0"
+                    />
+                    <span className="truncate">{service}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-            <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+            <label className="flex items-center gap-2 p-2 mt-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
               <input
                 type="checkbox"
                 checked={isCustomService}
@@ -510,7 +550,7 @@ export function Clients() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Zeitpräferenz</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Bevorzugte Zeit</label>
             <div className="grid grid-cols-3 gap-2">
               {['Vormittag', 'Nachmittag', 'Abend'].map((time) => (
                 <button

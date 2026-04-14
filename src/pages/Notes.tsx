@@ -9,6 +9,7 @@ import { Modal } from "../components/ui/modal";
 
 interface Note {
   id: string;
+  title: string;
   text: string;
   color: string;
   createdAt: string;
@@ -20,6 +21,7 @@ const COLORS = [
   { name: 'Grün', bg: 'bg-green-100 dark:bg-green-900/30', border: 'border-green-200 dark:border-green-800', dot: 'bg-green-400' },
   { name: 'Pink', bg: 'bg-pink-100 dark:bg-pink-900/30', border: 'border-pink-200 dark:border-pink-800', dot: 'bg-pink-400' },
   { name: 'Lila', bg: 'bg-purple-100 dark:bg-purple-900/30', border: 'border-purple-200 dark:border-purple-800', dot: 'bg-purple-400' },
+  { name: 'Rot', bg: 'bg-red-100 dark:bg-red-900/30', border: 'border-red-200 dark:border-red-800', dot: 'bg-red-400' },
 ];
 
 interface NoteCardProps {
@@ -30,20 +32,22 @@ interface NoteCardProps {
 }
 
 function NoteCard({ note, onSave, onDelete }: NoteCardProps) {
+  const [title, setTitle] = useState(note.title || "");
   const [text, setText] = useState(note.text);
   const [color, setColor] = useState(note.color);
   const [isSaved, setIsSaved] = useState(false);
 
   // Sync with prop if it changes from DB (optional, but good if another device changes it)
   useEffect(() => {
+    setTitle(note.title || "");
     setText(note.text);
     setColor(note.color);
-  }, [note.text, note.color]);
+  }, [note.title, note.text, note.color]);
 
-  const hasChanged = text !== note.text || color !== note.color;
+  const hasChanged = title !== note.title || text !== note.text || color !== note.color;
 
   const handleSave = () => {
-    onSave({ ...note, text, color });
+    onSave({ ...note, title, text, color });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2000);
   };
@@ -79,6 +83,13 @@ function NoteCard({ note, onSave, onDelete }: NoteCardProps) {
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
+      
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Titel..."
+        className="bg-transparent border-none focus:ring-0 p-0 text-deep-blue dark:text-white placeholder:text-gray-400 dark:placeholder:text-gray-500 font-bold mb-2 text-sm"
+      />
       
       <textarea
         value={text}
@@ -180,6 +191,7 @@ export function Notes() {
   const addNote = () => {
     const newNote: Note = {
       id: Date.now().toString(),
+      title: "",
       text: "",
       color: COLORS[0].bg,
       createdAt: new Date().toISOString()
