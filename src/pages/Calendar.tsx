@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, isSameMonth, isSameDay, addDays } from "date-fns";
-import { Calendar as CalendarIcon, Plus, CheckCircle, ChevronLeft, ChevronRight, Clock, Trash2, AlertTriangle, Users, ChevronDown } from "lucide-react";
+import { Calendar as CalendarIcon, Plus, CheckCircle, ChevronLeft, ChevronRight, Clock, Trash2, AlertTriangle, Users, ChevronDown, Edit2, X } from "lucide-react";
 import Holidays from "date-holidays";
 
 export function Calendar() {
@@ -32,6 +32,7 @@ export function Calendar() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCustomService, setIsCustomService] = useState(false);
   const [customService, setCustomService] = useState("");
+  const [customServices, setCustomServices] = useState<string[]>([]);
 
   // Modal State (Free Slot)
   const [matchingClients, setMatchingClients] = useState<any[]>([]);
@@ -42,6 +43,7 @@ export function Calendar() {
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [isCustomFreeService, setIsCustomFreeService] = useState(false);
   const [customFreeService, setCustomFreeService] = useState("");
+  const [customFreeServices, setCustomFreeServices] = useState<string[]>([]);
 
   const [isNotifiedClientsModalOpen, setIsNotifiedClientsModalOpen] = useState(false);
   const [selectedOpenSlot, setSelectedOpenSlot] = useState<any>(null);
@@ -50,6 +52,124 @@ export function Calendar() {
   const [additionalServiceType, setAdditionalServiceType] = useState<string>("");
   const [isCustomNotifyService, setIsCustomNotifyService] = useState(false);
   const [customNotifyService, setCustomNotifyService] = useState("");
+  const [customNotifyServices, setCustomNotifyServices] = useState<string[]>([]);
+  
+  const [editingCustomIndex, setEditingCustomIndex] = useState<{type: 'booked' | 'free' | 'notify', index: number} | null>(null);
+  const [editingCustomValue, setEditingCustomValue] = useState("");
+
+  const [confirmDeleteCustomIndex, setConfirmDeleteCustomIndex] = useState<{type: 'booked' | 'free' | 'notify', index: number} | null>(null);
+
+  const renderCustomServicesList = (type: 'booked' | 'free' | 'notify') => {
+    const list = type === 'booked' ? customServices : type === 'free' ? customFreeServices : customNotifyServices;
+    const setList = type === 'booked' ? setCustomServices : type === 'free' ? setCustomFreeServices : setCustomNotifyServices;
+    const input = type === 'booked' ? customService : type === 'free' ? customFreeService : customNotifyService;
+    const setInput = type === 'booked' ? setCustomService : type === 'free' ? setCustomFreeService : setCustomNotifyService;
+
+    const addService = () => {
+      if (input.trim()) {
+        setList([...list, input.trim()]);
+        setInput("");
+      }
+    };
+
+    const removeService = (index: number) => {
+      setList(list.filter((_, i) => i !== index));
+      setConfirmDeleteCustomIndex(null);
+    };
+
+    const startEdit = (index: number) => {
+      setEditingCustomIndex({ type, index });
+      setEditingCustomValue(list[index]);
+      setConfirmDeleteCustomIndex(null);
+    };
+
+    const saveEdit = () => {
+      if (editingCustomIndex && editingCustomValue.trim()) {
+        const newList = [...list];
+        newList[editingCustomIndex.index] = editingCustomValue.trim();
+        setList(newList);
+        setEditingCustomIndex(null);
+        setEditingCustomValue("");
+      }
+    };
+
+    return (
+      <div className="mt-2 space-y-2">
+        <div className="flex gap-2">
+          <Input 
+            placeholder="Eigene Dienstleistung..." 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            className="flex-1 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addService();
+              }
+            }}
+          />
+          <Button onClick={addService} size="sm" className="bg-accent hover:bg-accent-hover text-white h-10">
+            Hinzufügen
+          </Button>
+        </div>
+        
+        {list.length > 0 && (
+          <div className="space-y-1 mt-2">
+            {list.map((service, index) => (
+              <div key={index} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700">
+                {editingCustomIndex?.type === type && editingCustomIndex?.index === index ? (
+                  <div className="flex gap-2 w-full items-center">
+                    <Input 
+                      value={editingCustomValue}
+                      onChange={(e) => setEditingCustomValue(e.target.value)}
+                      className="h-8 text-xs flex-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          saveEdit();
+                        }
+                        if (e.key === 'Escape') {
+                          setEditingCustomIndex(null);
+                        }
+                      }}
+                    />
+                    <button onClick={saveEdit} className="p-1 text-green-600 hover:text-green-700 transition-colors">
+                      <CheckCircle className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => setEditingCustomIndex(null)} className="p-1 text-gray-400 hover:text-gray-600 transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : confirmDeleteCustomIndex?.type === type && confirmDeleteCustomIndex?.index === index ? (
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-xs font-medium text-red-500">Wirklich löschen?</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => removeService(index)} className="text-xs font-bold text-red-600 hover:text-red-700">Ja</button>
+                      <button onClick={() => setConfirmDeleteCustomIndex(null)} className="text-xs font-bold text-gray-500 hover:text-gray-700">Nein</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{service}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => startEdit(index)} className="p-1 text-gray-400 hover:text-accent transition-colors">
+                        <Edit2 className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => setConfirmDeleteCustomIndex({ type, index })} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const [additionalEmployeeId, setAdditionalEmployeeId] = useState<string>("");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [slotToDelete, setSlotToDelete] = useState<any>(null);
@@ -137,7 +257,13 @@ export function Calendar() {
   }, [businessId, newSlotServices, isFreeSlotModalOpen, slots]);
 
   const handleCreateBookedSlot = async () => {
-    const finalService = isCustomService && customService.trim() ? customService.trim() : newSlotServices.join(", ");
+    const allServices = [...newSlotServices];
+    if (isCustomService && customService.trim()) {
+      allServices.push(customService.trim());
+    }
+    const combinedCustomServices = [...customServices];
+    const finalService = [...allServices, ...combinedCustomServices].filter(Boolean).join(", ");
+
     if (!businessId || !newSlotDate || !newSlotTime || !finalService || !clientName) return;
     setIsSubmitting(true);
 
@@ -217,6 +343,7 @@ export function Calendar() {
       setClientName("");
       setIsCustomService(false);
       setCustomService("");
+      setCustomServices([]);
     } catch (error) {
       console.error("Error saving booked slot", error);
     } finally {
@@ -258,9 +385,12 @@ export function Calendar() {
   }, [isFreeSlotModalOpen, newSlotTime]);
 
   const handleCreateFreeSlot = async () => {
-    const finalServices = isCustomFreeService && customFreeService.trim() 
-      ? [...newSlotServices, customFreeService.trim()]
-      : newSlotServices;
+    const allServices = [...newSlotServices];
+    if (isCustomFreeService && customFreeService.trim()) {
+      allServices.push(customFreeService.trim());
+    }
+    const combinedCustomServices = [...customFreeServices];
+    const finalServices = [...allServices, ...combinedCustomServices].filter(Boolean);
 
     if (!businessId || !newSlotDate || !newSlotTime) return;
     setIsSubmitting(true);
@@ -320,6 +450,7 @@ export function Calendar() {
       setIsFreeSlotModalOpen(false);
       setIsCustomFreeService(false);
       setCustomFreeService("");
+      setCustomFreeServices([]);
     } catch (error) {
       console.error("Error creating free slot", error);
     } finally {
@@ -328,9 +459,12 @@ export function Calendar() {
   };
 
   const handleNotifyMoreClients = async () => {
-    const finalServices = isCustomNotifyService && customNotifyService.trim() 
-      ? (additionalServiceType ? additionalServiceType.split(', ') : []).concat(customNotifyService.trim()).join(', ')
-      : additionalServiceType;
+    const allServices = additionalServiceType ? additionalServiceType.split(', ') : [];
+    if (isCustomNotifyService && customNotifyService.trim()) {
+      allServices.push(customNotifyService.trim());
+    }
+    const combinedCustomServices = [...customNotifyServices];
+    const finalServices = [...allServices, ...combinedCustomServices].filter(Boolean).join(', ');
 
     if (!businessId || !selectedOpenSlot || additionalClients.length === 0) return;
     setIsSubmitting(true);
@@ -766,6 +900,16 @@ export function Calendar() {
       >
         <div className="space-y-6">
           <div>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
+            <Input 
+              type="date" 
+              value={newSlotDate} 
+              onChange={(e) => setNewSlotDate(e.target.value)}
+              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Uhrzeit</label>
             <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
               {generateTimeSlots().map((time) => {
@@ -795,16 +939,6 @@ export function Calendar() {
                 );
               })}
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
-            <Input 
-              type="date" 
-              value={newSlotDate} 
-              onChange={(e) => setNewSlotDate(e.target.value)}
-              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-            />
           </div>
 
           <div>
@@ -878,15 +1012,19 @@ export function Calendar() {
                     .filter(s => s.toLowerCase().startsWith(slotServiceSearch.toLowerCase()))
                     .sort((a, b) => a.localeCompare(b))
                     .map((service: string) => (
-                    <label key={service} className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
+                    <label
+                      key={service}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
+                    >
                       <input
                         type="checkbox"
                         checked={newSlotServices.includes(service)}
                         onChange={() => {
-                          setIsCustomService(false);
-                          setNewSlotServices(prev => 
-                            prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
-                          );
+                          if (newSlotServices.includes(service)) {
+                            setNewSlotServices(newSlotServices.filter(s => s !== service));
+                          } else {
+                            setNewSlotServices([...newSlotServices, service]);
+                          }
                         }}
                         className="accent-accent"
                       />
@@ -907,52 +1045,40 @@ export function Calendar() {
                   </label>
               </div>
             </div>
-            {isCustomService && (
-              <Input 
-                placeholder="Eigene Dienstleistung..." 
-                value={customService}
-                onChange={(e) => setCustomService(e.target.value)}
-                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-            )}
+            {isCustomService && renderCustomServicesList('booked')}
           </div>
 
-          <div className="relative">
-              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name des Kunden</label>
-              <Input 
-                value={clientName} 
-                onChange={(e) => {
-                  setClientName(e.target.value);
-                  setShowClientDropdown(true);
-                }}
-                onFocus={() => setShowClientDropdown(true)}
-                onBlur={() => setTimeout(() => setShowClientDropdown(false), 200)}
-                placeholder="z.B. Anna Schmidt"
-                className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-              {showClientDropdown && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                  {clients
-                    .filter(c => c.name.toLowerCase().startsWith(clientName.toLowerCase()))
-                    .map(client => (
-                    <div 
-                      key={client.id} 
-                      className="px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-deep-blue dark:text-white flex justify-between items-center"
-                      onMouseDown={(e) => {
-                        e.preventDefault(); // Prevent blur from firing before click
-                        setClientName(client.name);
-                        setShowClientDropdown(false);
-                      }}
-                    >
-                      <span>{client.name}</span>
-                      <span className="text-gray-400 dark:text-gray-500 text-xs">{client.phone}</span>
-                    </div>
-                  ))}
-                  {clients.filter(c => c.name.toLowerCase().startsWith(clientName.toLowerCase())).length === 0 && (
-                    <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">Keine passenden Kunden gefunden</div>
-                  )}
+          <div className="space-y-3 mt-8">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name des Kunden</label>
+            <Input 
+              placeholder="Kunde suchen oder Name eingeben..." 
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+            <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
+              {clients
+                .filter(c => c.name.toLowerCase().startsWith(clientName.toLowerCase()))
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((client: any) => (
+                <div 
+                  key={client.id}
+                  onClick={() => setClientName(client.name)}
+                  className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${clientName === client.name ? 'bg-accent/5' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}
+                >
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${clientName === client.name ? 'bg-accent border-accent' : 'border-gray-300 dark:border-slate-700'}`}>
+                    {clientName === client.name && <div className="w-1.5 h-1.5 bg-deep-blue rounded-full" />}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
+                    <div className="text-[10px] text-gray-500 dark:text-gray-400">{client.phone}</div>
+                  </div>
                 </div>
+              ))}
+              {clients.filter(c => c.name.toLowerCase().startsWith(clientName.toLowerCase())).length === 0 && (
+                <div className="px-3 py-4 text-sm text-center text-gray-400">Kein Kunde gefunden</div>
               )}
+            </div>
           </div>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
@@ -1004,6 +1130,17 @@ export function Calendar() {
       >
         <div className="space-y-6">
           <div>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
+            <Input 
+              type="date" 
+              value={newSlotDate} 
+              onChange={(e) => setNewSlotDate(e.target.value)}
+              min={format(new Date(), 'yyyy-MM-dd')}
+              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+          </div>
+
+          <div>
             <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Uhrzeit</label>
             <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
               {generateTimeSlots().map((time) => {
@@ -1033,17 +1170,6 @@ export function Calendar() {
                 );
               })}
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
-            <Input 
-              type="date" 
-              value={newSlotDate} 
-              onChange={(e) => setNewSlotDate(e.target.value)}
-              min={format(new Date(), 'yyyy-MM-dd')}
-              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-            />
           </div>
           
           <div className="mb-6">
@@ -1148,15 +1274,8 @@ export function Calendar() {
                   </label>
               </div>
             </div>
-          {isCustomFreeService && (
-            <Input 
-              placeholder="Eigene Dienstleistung..." 
-              value={customFreeService}
-              onChange={(e) => setCustomFreeService(e.target.value)}
-              className="mt-2 mb-6 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-            />
-          )}
-        </div>
+            {isCustomFreeService && renderCustomServicesList('free')}
+          </div>
 
           <div className="space-y-3">
             <Input 
@@ -1323,14 +1442,7 @@ export function Calendar() {
                   </label>
               </div>
             </div>
-            {isCustomNotifyService && (
-              <Input 
-                placeholder="Eigene Dienstleistung..." 
-                value={customNotifyService}
-                onChange={(e) => setCustomNotifyService(e.target.value)}
-                className="mt-2 mb-6 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-            )}
+            {isCustomNotifyService && renderCustomServicesList('notify')}
           </div>
 
           <div className="space-y-3">

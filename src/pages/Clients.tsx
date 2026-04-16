@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button";
 import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
 import { format } from "date-fns";
-import { Plus, Trash2, Edit2, Clock, AlertTriangle, Search, Filter, ChevronDown } from "lucide-react";
+import { Plus, Trash2, Edit2, Clock, AlertTriangle, Search, Filter, ChevronDown, CheckCircle, X } from "lucide-react";
 
 export function Clients() {
   const { businessId } = useAuth();
@@ -63,6 +63,119 @@ export function Clients() {
   const [isSavingSlot, setIsSavingSlot] = useState(false);
   const [isCustomService, setIsCustomService] = useState(false);
   const [customService, setCustomService] = useState("");
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [customServices, setCustomServices] = useState<string[]>([]);
+  const [editingCustomIndex, setEditingCustomIndex] = useState<number | null>(null);
+  const [editingCustomValue, setEditingCustomValue] = useState("");
+
+  const [confirmDeleteCustomIndex, setConfirmDeleteCustomIndex] = useState<number | null>(null);
+
+  const renderCustomServicesList = () => {
+    const addService = () => {
+      if (customService.trim()) {
+        setCustomServices([...customServices, customService.trim()]);
+        setCustomService("");
+      }
+    };
+
+    const removeService = (index: number) => {
+      setCustomServices(customServices.filter((_, i) => i !== index));
+      setConfirmDeleteCustomIndex(null);
+    };
+
+    const startEdit = (index: number) => {
+      setEditingCustomIndex(index);
+      setEditingCustomValue(customServices[index]);
+      setConfirmDeleteCustomIndex(null);
+    };
+
+    const saveEdit = () => {
+      if (editingCustomIndex !== null && editingCustomValue.trim()) {
+        const newList = [...customServices];
+        newList[editingCustomIndex] = editingCustomValue.trim();
+        setCustomServices(newList);
+        setEditingCustomIndex(null);
+        setEditingCustomValue("");
+      }
+    };
+
+    return (
+      <div className="mt-2 space-y-2">
+        <div className="flex gap-2">
+          <Input 
+            placeholder="Eigene Dienstleistung..." 
+            value={customService}
+            onChange={(e) => setCustomService(e.target.value)}
+            className="flex-1 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addService();
+              }
+            }}
+          />
+          <Button onClick={addService} size="sm" className="bg-accent hover:bg-accent-hover text-white h-10">
+            Hinzufügen
+          </Button>
+        </div>
+        
+        {customServices.length > 0 && (
+          <div className="space-y-1 mt-2">
+            {customServices.map((service, index) => (
+              <div key={index} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700">
+                {editingCustomIndex === index ? (
+                  <div className="flex gap-2 w-full items-center">
+                    <Input 
+                      value={editingCustomValue}
+                      onChange={(e) => setEditingCustomValue(e.target.value)}
+                      className="h-8 text-xs flex-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          saveEdit();
+                        }
+                        if (e.key === 'Escape') {
+                          setEditingCustomIndex(null);
+                        }
+                      }}
+                    />
+                    <button onClick={saveEdit} className="p-1 text-green-600 hover:text-green-700 transition-colors">
+                      <CheckCircle className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => setEditingCustomIndex(null)} className="p-1 text-gray-400 hover:text-gray-600 transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : confirmDeleteCustomIndex === index ? (
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-xs font-medium text-red-500">Wirklich löschen?</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => removeService(index)} className="text-xs font-bold text-red-600 hover:text-red-700">Ja</button>
+                      <button onClick={() => setConfirmDeleteCustomIndex(null)} className="text-xs font-bold text-gray-500 hover:text-gray-700">Nein</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{service}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => startEdit(index)} className="p-1 text-gray-400 hover:text-accent transition-colors">
+                        <Edit2 className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => setConfirmDeleteCustomIndex(index)} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const [isCustomSlotService, setIsCustomSlotService] = useState(false);
   const [customSlotService, setCustomSlotService] = useState("");
   const [isSlotServiceDropdownOpen, setIsSlotServiceDropdownOpen] = useState(false);
@@ -190,6 +303,8 @@ export function Clients() {
     setConsentGiven(false);
     setIsCustomService(false);
     setCustomService("");
+    setServiceSearch("");
+    setCustomServices([]);
     setIsModalOpen(true);
   };
 
@@ -198,11 +313,22 @@ export function Clients() {
     setEditingClientId(client.id);
     setName(client.name);
     setPhone(client.phone);
-    setSelectedServices(client.serviceTypes || []);
+    
+    // Separate standard services from custom services
+    const standardServices = business?.serviceTypes || [];
+    const clientServices = client.serviceTypes || [];
+    
+    const standard = clientServices.filter((s: string) => standardServices.includes(s));
+    const custom = clientServices.filter((s: string) => !standardServices.includes(s));
+    
+    setSelectedServices(standard);
+    setCustomServices(custom);
+    setIsCustomService(custom.length > 0);
+    
     setSelectedTimes(client.preferredTimes || []);
     setConsentGiven(client.consentGiven || false);
-    setIsCustomService(false);
     setCustomService("");
+    setServiceSearch("");
     setIsModalOpen(true);
   };
 
@@ -210,9 +336,11 @@ export function Clients() {
     if (!businessId || !name || !phone || !consentGiven) return;
     setIsSubmitting(true);
 
-    const finalServices = isCustomService && customService.trim() 
-      ? [...selectedServices, customService.trim()]
-      : selectedServices;
+    const allServices = [...selectedServices];
+    if (isCustomService && customService.trim()) {
+      allServices.push(customService.trim());
+    }
+    const finalServices = [...allServices, ...customServices].filter(Boolean);
 
     // Normalize phone number: replace leading 0 with +49
     let normalizedPhone = phone.trim();
@@ -245,6 +373,8 @@ export function Clients() {
       setIsModalOpen(false);
       setIsCustomService(false);
       setCustomService("");
+      setServiceSearch("");
+      setCustomServices([]);
     } catch (error) {
       console.error("Error saving client", error);
     } finally {
@@ -514,14 +644,14 @@ export function Clients() {
               <div className="p-2 border-b border-gray-100 dark:border-slate-700">
                 <Input
                   placeholder="Dienstleistung suchen..."
-                  value={customService} // Reusing customService state for search if needed, or add new state
-                  onChange={(e) => setCustomService(e.target.value)}
+                  value={serviceSearch}
+                  onChange={(e) => setServiceSearch(e.target.value)}
                   className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
                 />
               </div>
               <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
                 {[...business?.serviceTypes || []]
-                  .filter(s => s.toLowerCase().startsWith(customService.toLowerCase()))
+                  .filter(s => s.toLowerCase().startsWith(serviceSearch.toLowerCase()))
                   .sort((a, b) => a.localeCompare(b))
                   .map((service: string) => (
                   <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
@@ -545,14 +675,7 @@ export function Clients() {
               />
               <span className="truncate">Individuell...</span>
             </label>
-            {isCustomService && (
-              <Input 
-                placeholder="Eigene Dienstleistung..." 
-                value={customService}
-                onChange={(e) => setCustomService(e.target.value)}
-                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-            )}
+            {isCustomService && renderCustomServicesList()}
           </div>
 
           <div>

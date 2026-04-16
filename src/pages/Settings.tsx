@@ -87,6 +87,118 @@ export function Settings() {
   const [isEmployeeServiceDropdownOpen, setIsEmployeeServiceDropdownOpen] = useState(false);
   const [isCustomEmployeeService, setIsCustomEmployeeService] = useState(false);
   const [customEmployeeService, setCustomEmployeeService] = useState("");
+  const [customEmployeeServices, setCustomEmployeeServices] = useState<string[]>([]);
+  const [editingCustomEmployeeIndex, setEditingCustomEmployeeIndex] = useState<number | null>(null);
+  const [editingCustomEmployeeValue, setEditingCustomEmployeeValue] = useState("");
+  const [employeeServiceSearch, setEmployeeServiceSearch] = useState("");
+
+  const [confirmDeleteCustomEmployeeIndex, setConfirmDeleteCustomEmployeeIndex] = useState<number | null>(null);
+
+  const renderCustomEmployeeServicesList = () => {
+    const addService = () => {
+      if (customEmployeeService.trim()) {
+        setCustomEmployeeServices([...customEmployeeServices, customEmployeeService.trim()]);
+        setCustomEmployeeService("");
+      }
+    };
+
+    const removeService = (index: number) => {
+      setCustomEmployeeServices(customEmployeeServices.filter((_, i) => i !== index));
+      setConfirmDeleteCustomEmployeeIndex(null);
+    };
+
+    const startEdit = (index: number) => {
+      setEditingCustomEmployeeIndex(index);
+      setEditingCustomEmployeeValue(customEmployeeServices[index]);
+      setConfirmDeleteCustomEmployeeIndex(null);
+    };
+
+    const saveEdit = () => {
+      if (editingCustomEmployeeIndex !== null && editingCustomEmployeeValue.trim()) {
+        const newList = [...customEmployeeServices];
+        newList[editingCustomEmployeeIndex] = editingCustomEmployeeValue.trim();
+        setCustomEmployeeServices(newList);
+        setEditingCustomEmployeeIndex(null);
+        setEditingCustomEmployeeValue("");
+      }
+    };
+
+    return (
+      <div className="mt-2 space-y-2">
+        <div className="flex gap-2">
+          <Input 
+            placeholder="Eigene Dienstleistung..." 
+            value={customEmployeeService}
+            onChange={(e) => setCustomEmployeeService(e.target.value)}
+            className="flex-1 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addService();
+              }
+            }}
+          />
+          <Button onClick={addService} size="sm" className="bg-accent hover:bg-accent-hover text-white h-10">
+            Hinzufügen
+          </Button>
+        </div>
+        
+        {customEmployeeServices.length > 0 && (
+          <div className="space-y-1 mt-2">
+            {customEmployeeServices.map((service, index) => (
+              <div key={index} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700">
+                {editingCustomEmployeeIndex === index ? (
+                  <div className="flex gap-2 w-full items-center">
+                    <Input 
+                      value={editingCustomEmployeeValue}
+                      onChange={(e) => setEditingCustomEmployeeValue(e.target.value)}
+                      className="h-8 text-xs flex-1 dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          saveEdit();
+                        }
+                        if (e.key === 'Escape') {
+                          setEditingCustomEmployeeIndex(null);
+                        }
+                      }}
+                    />
+                    <button onClick={saveEdit} className="p-1 text-green-600 hover:text-green-700 transition-colors">
+                      <CheckCircle2 className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => setEditingCustomEmployeeIndex(null)} className="p-1 text-gray-400 hover:text-gray-600 transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : confirmDeleteCustomEmployeeIndex === index ? (
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-xs font-medium text-red-500">Wirklich löschen?</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => removeService(index)} className="text-xs font-bold text-red-600 hover:text-red-700">Ja</button>
+                      <button onClick={() => setConfirmDeleteCustomEmployeeIndex(null)} className="text-xs font-bold text-gray-500 hover:text-gray-700">Nein</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{service}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => startEdit(index)} className="p-1 text-gray-400 hover:text-accent transition-colors">
+                        <Edit2 className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => setConfirmDeleteCustomEmployeeIndex(index)} className="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const [federalState, setFederalState] = useState("");
   const [appointmentStatusDelay, setAppointmentStatusDelay] = useState("0");
@@ -104,6 +216,8 @@ export function Settings() {
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
   const [editingAbsenceId, setEditingAbsenceId] = useState<string | null>(null);
   const [absenceData, setAbsenceData] = useState({ employeeId: "", type: "Urlaub", startDate: "", endDate: "" });
+  const [absenceEmployeeSearch, setAbsenceEmployeeSearch] = useState("");
+  const [isAbsenceEmployeeDropdownOpen, setIsAbsenceEmployeeDropdownOpen] = useState(false);
 
   const [isDeleteServiceModalOpen, setIsDeleteServiceModalOpen] = useState(false);
   const [serviceToDelete, setServiceToDelete] = useState<string | null>(null);
@@ -249,7 +363,19 @@ export function Settings() {
     setEditingEmployeeId(emp.id);
     setEmployeeName(emp.name);
     setEmployeePhone(emp.phone || "");
-    setEmployeeServices(emp.serviceTypes || services);
+    
+    const standardServices = services || [];
+    const empServices = emp.serviceTypes || [];
+    
+    const standard = empServices.filter((s: string) => standardServices.includes(s));
+    const custom = empServices.filter((s: string) => !standardServices.includes(s));
+    
+    setEmployeeServices(standard);
+    setCustomEmployeeServices(custom);
+    setIsCustomEmployeeService(custom.length > 0);
+    setCustomEmployeeService("");
+    setEmployeeServiceSearch("");
+    
     setEmployeeHours(emp.workingHours || openingHours);
     setIsEmployeeModalOpen(true);
   };
@@ -257,19 +383,11 @@ export function Settings() {
   const handleSaveEmployee = async () => {
     if (!businessId || !employeeName.trim()) return;
     
-    let finalServices = [...employeeServices];
+    const allServices = [...employeeServices];
     if (isCustomEmployeeService && customEmployeeService.trim()) {
-      if (!finalServices.includes(customEmployeeService.trim())) {
-        finalServices.push(customEmployeeService.trim());
-      }
-      
-      // Also add to business services if not exists
-      if (!services.includes(customEmployeeService.trim())) {
-        const updatedBusinessServices = [...services, customEmployeeService.trim()];
-        setServices(updatedBusinessServices);
-        await updateDoc(doc(db, "businesses", businessId), { serviceTypes: updatedBusinessServices });
-      }
+      allServices.push(customEmployeeService.trim());
     }
+    const finalServices = [...allServices, ...customEmployeeServices].filter(Boolean);
 
     let updatedEmployees;
     if (editingEmployeeId) {
@@ -293,6 +411,7 @@ export function Settings() {
     setIsEmployeeModalOpen(false);
     setIsCustomEmployeeService(false);
     setCustomEmployeeService("");
+    setCustomEmployeeServices([]);
     
     await updateDoc(doc(db, "businesses", businessId), { employees: updatedEmployees });
   };
@@ -633,6 +752,8 @@ export function Settings() {
                 setEmployeeServices([]);
                 setIsCustomEmployeeService(false);
                 setCustomEmployeeService("");
+                setCustomEmployeeServices([]);
+                setEmployeeServiceSearch("");
                 setEmployeeHours(openingHours);
                 setIsEmployeeModalOpen(true);
               }} 
@@ -894,52 +1015,49 @@ export function Settings() {
           
           <div>
             <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistungen</label>
-            <button
-              type="button"
-              onClick={() => setIsEmployeeServiceDropdownOpen(!isEmployeeServiceDropdownOpen)}
-              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white mb-2"
-            >
-              <span>
-                {employeeServices.length > 0 
-                  ? `${employeeServices.length} ausgewählt` 
-                  : (isCustomEmployeeService ? "Individuell..." : "Dienstleistungen auswählen")}
-              </span>
-              <ChevronDown className={`h-4 w-4 transition-transform ${isEmployeeServiceDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isEmployeeServiceDropdownOpen && (
-              <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
-                {[...services].sort((a, b) => a.localeCompare(b)).map(service => (
-                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Dienstleistung suchen..."
+                  value={employeeServiceSearch}
+                  onChange={(e) => setEmployeeServiceSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {[...services]
+                  .filter(s => s.toLowerCase().startsWith(employeeServiceSearch.toLowerCase()))
+                  .sort((a, b) => a.localeCompare(b))
+                  .map(service => (
+                  <label
+                    key={service}
+                    className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
+                  >
                     <input
                       type="checkbox"
                       checked={employeeServices.includes(service)}
                       onChange={() => setEmployeeServices(prev => 
                         prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
                       )}
-                      className="accent-accent shrink-0"
+                      className="accent-accent"
                     />
-                    <span className="truncate">{service}</span>
+                    <span>{service}</span>
                   </label>
                 ))}
-                <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={isCustomEmployeeService}
-                    onChange={() => setIsCustomEmployeeService(!isCustomEmployeeService)}
-                    className="accent-accent shrink-0"
-                  />
-                  <span className="truncate">Individuell...</span>
-                </label>
               </div>
-            )}
-            {isCustomEmployeeService && (
-              <Input 
-                placeholder="Eigene Dienstleistung..." 
-                value={customEmployeeService}
-                onChange={(e) => setCustomEmployeeService(e.target.value)}
-                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-            )}
+              <div className="p-2 border-t border-gray-100 dark:border-slate-700">
+                  <label className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isCustomEmployeeService}
+                      onChange={() => setIsCustomEmployeeService(!isCustomEmployeeService)}
+                      className="accent-accent"
+                    />
+                    <span>Individuell...</span>
+                  </label>
+              </div>
+            </div>
+            {isCustomEmployeeService && renderCustomEmployeeServicesList()}
           </div>
 
           <div>
@@ -1027,21 +1145,65 @@ export function Settings() {
 
       <Modal 
         isOpen={isAbsenceModalOpen} 
-        onClose={() => setIsAbsenceModalOpen(false)} 
+        onClose={() => {
+          setIsAbsenceModalOpen(false);
+          setIsAbsenceEmployeeDropdownOpen(false);
+          setAbsenceEmployeeSearch("");
+        }} 
         title={editingAbsenceId ? "Abwesenheit bearbeiten" : "Abwesenheit eintragen"}
         headerClassName="bg-slate-500"
       >
         <div className="space-y-6">
           <div>
             <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
-            <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              value={absenceData.employeeId}
-              onChange={(e) => setAbsenceData({...absenceData, employeeId: e.target.value})}
+            <button
+              type="button"
+              onClick={() => setIsAbsenceEmployeeDropdownOpen(!isAbsenceEmployeeDropdownOpen)}
+              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white"
             >
-              <option value="">Mitarbeiter auswählen...</option>
-              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-            </select>
+              <span>{absenceData.employeeId ? employees.find(e => e.id === absenceData.employeeId)?.name : "Mitarbeiter auswählen..."}</span>
+              <ChevronDown className={`h-4 w-4 transition-transform ${isAbsenceEmployeeDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isAbsenceEmployeeDropdownOpen && (
+              <div className="mt-2 border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+                <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                  <Input
+                    placeholder="Mitarbeiter suchen..."
+                    value={absenceEmployeeSearch}
+                    onChange={(e) => setAbsenceEmployeeSearch(e.target.value)}
+                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                  />
+                </div>
+                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[180px]">
+                  <button
+                    onClick={() => { setAbsenceData({...absenceData, employeeId: ""}); setAbsenceEmployeeSearch(""); setIsAbsenceEmployeeDropdownOpen(false); }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      absenceData.employeeId === "" 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Mitarbeiter auswählen...
+                  </button>
+                  {employees
+                    .filter(e => e.name.toLowerCase().startsWith(absenceEmployeeSearch.toLowerCase()))
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map(emp => (
+                    <button
+                      key={emp.id}
+                      onClick={() => { setAbsenceData({...absenceData, employeeId: emp.id}); setAbsenceEmployeeSearch(""); setIsAbsenceEmployeeDropdownOpen(false); }}
+                      className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                        absenceData.employeeId === emp.id 
+                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {emp.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div>
