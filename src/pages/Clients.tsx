@@ -273,7 +273,7 @@ export function Clients() {
       const nameStr = client.name || "";
       const phoneStr = client.phone || "";
       const matchesSearch = nameStr.toLowerCase().startsWith(searchQuery.toLowerCase()) || 
-                            phoneStr.includes(searchQuery);
+                            phoneStr.startsWith(searchQuery);
       const matchesService = filterService === "all" || (client.serviceTypes && client.serviceTypes.includes(filterService));
       
       const now = new Date();
@@ -303,8 +303,9 @@ export function Clients() {
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8">
-        <div>
+        <div className="flex items-center gap-3">
           <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Kundenliste</h1>
+          <span className="bg-deep-blue/10 dark:bg-accent/10 text-deep-blue dark:text-accent px-3 py-1 rounded-full text-sm font-bold">{clients.length}</span>
         </div>
         <Button onClick={openAddModal} className="w-full sm:w-auto bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold px-6 shadow-lg shadow-deep-blue/20 dark:shadow-accent/20">
           <Plus className="mr-2 h-5 w-5" /> Kunde hinzufügen
@@ -480,7 +481,12 @@ export function Clients() {
         </div>
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={isEditMode ? "Kunde bearbeiten" : "Kunde hinzufügen"}>
+      <Modal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        title={isEditMode ? "Kunde bearbeiten" : "Kunde hinzufügen"}
+        headerClassName="bg-deep-blue"
+      >
         <div className="space-y-6">
           <div>
             <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name</label>
@@ -515,7 +521,7 @@ export function Clients() {
               </div>
               <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
                 {[...business?.serviceTypes || []]
-                  .filter(s => s.toLowerCase().includes(customService.toLowerCase()))
+                  .filter(s => s.toLowerCase().startsWith(customService.toLowerCase()))
                   .sort((a, b) => a.localeCompare(b))
                   .map((service: string) => (
                   <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
@@ -617,7 +623,12 @@ export function Clients() {
         </div>
       </Modal>
 
-      <Modal isOpen={isAppointmentModalOpen} onClose={() => setIsAppointmentModalOpen(false)} title="Termindetails">
+      <Modal 
+        isOpen={isAppointmentModalOpen} 
+        onClose={() => setIsAppointmentModalOpen(false)} 
+        title="Termindetails"
+        headerClassName="bg-indigo-500"
+      >
         <div className="space-y-4">
           {selectedClientAppointments.length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-gray-400">Dieser Kunde hat aktuell keine Termine.</p>
@@ -701,14 +712,19 @@ export function Clients() {
         </div>
       </Modal>
 
-      <Modal isOpen={isEditSlotModalOpen} onClose={() => {
-        setIsEditSlotModalOpen(false);
-        setIsCustomSlotService(false);
-        setCustomSlotService("");
-      }} title="Termin bearbeiten">
+      <Modal 
+        isOpen={isEditSlotModalOpen} 
+        onClose={() => {
+          setIsEditSlotModalOpen(false);
+          setIsCustomSlotService(false);
+          setCustomSlotService("");
+        }} 
+        title="Termin bearbeiten"
+        headerClassName="bg-deep-blue"
+      >
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Datum</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
             <Input 
               type="date" 
               value={newSlotDate} 
@@ -719,7 +735,7 @@ export function Clients() {
           
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Uhrzeit</label>
               <Input 
                 type="time" 
                 value={newSlotTime} 
@@ -729,7 +745,7 @@ export function Clients() {
             </div>
             
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter (Optional)</label>
               <button
                 type="button"
                 onClick={() => setIsSlotEmployeeDropdownOpen(!isSlotEmployeeDropdownOpen)}
@@ -769,7 +785,7 @@ export function Clients() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistung</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistung</label>
             <button
               type="button"
               onClick={() => setIsSlotServiceDropdownOpen(!isSlotServiceDropdownOpen)}

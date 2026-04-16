@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, Settings, LogOut, Calendar, Clock, Sun, Moon, Menu, X, Zap, StickyNote, Bell, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Users, Settings, LogOut, Calendar, Clock, Sun, Moon, Menu, X, CalendarDays, StickyNote, Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { logOut, db } from "../firebase";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
@@ -28,6 +28,8 @@ export function Layout() {
     const saved = localStorage.getItem('sidebarCollapsed');
     return saved === 'true';
   });
+
+  const isEffectiveCollapsed = isSidebarCollapsed && !isMobileMenuOpen;
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', isSidebarCollapsed.toString());
@@ -70,56 +72,50 @@ export function Layout() {
   };
 
   return (
-    <div className="flex h-screen bg-white transition-colors duration-300">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-50">
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-deep-blue border-b border-white/10 flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 text-gray-600"
+            className="p-2 text-white/70 hover:text-white"
           >
             {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
-          <div className="bg-accent p-1.5 rounded-lg shadow-sm">
-            <Zap className="h-5 w-5 text-deep-blue fill-deep-blue" />
+          <div className="p-1.5 rounded-lg shrink-0">
+            <CalendarDays className="h-5 w-5 text-accent" />
           </div>
-          <span className="font-black tracking-tight text-brand-blue uppercase text-sm">SlotFiller</span>
+          <span className="font-black tracking-tight text-white uppercase text-sm font-display">SlotFiller</span>
         </div>
         <div className="flex items-center gap-2">
-          <button 
-            onClick={() => {
-              if (window.location.pathname === '/notes') {
-                navigate('/');
-              } else {
-                navigate('/notes');
-              }
-            }}
-            className="p-2 text-gray-600"
-          >
-            <StickyNote className="h-6 w-6" />
-          </button>
-          <div className="w-8 h-8 rounded-full bg-deep-blue flex items-center justify-center text-white text-xs font-bold">
-            {user?.email?.charAt(0).toUpperCase()}
-          </div>
         </div>
       </div>
 
       {/* Sidebar (Desktop) */}
       <aside className={`
-        fixed inset-y-0 left-0 z-40 bg-white border-r border-gray-200 flex flex-col transition-all duration-300 lg:translate-x-0 lg:static
+        fixed inset-y-0 left-0 z-40 bg-deep-blue border-r border-white/10 flex flex-col transition-all duration-300 lg:translate-x-0 lg:relative overflow-hidden
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
+        w-64 ${isEffectiveCollapsed ? 'lg:w-20' : 'lg:w-64'}
       `}>
-        <div className={`p-6 ${isSidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
-          <div className={`mb-4 flex items-center gap-2 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-            <div className="bg-accent p-1.5 rounded-lg shadow-lg shadow-accent/20 shrink-0">
-              <Zap className="h-4 w-4 text-deep-blue fill-deep-blue" />
+        {/* Decorative Eye-catcher */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-10">
+          <div className="absolute -bottom-24 -right-24 w-80 h-80 rounded-full bg-accent blur-[100px]" />
+          <div className="absolute bottom-12 -left-12 w-64 h-64 rounded-full bg-white blur-[80px]" />
+          <svg className="absolute bottom-0 left-0 w-full h-48 text-white/10" viewBox="0 0 1440 320" preserveAspectRatio="none">
+            <path fill="currentColor" d="M0,160L48,176C96,192,192,224,288,224C384,224,480,192,576,165.3C672,139,768,117,864,128C960,139,1056,181,1152,197.3C1248,213,1344,203,1392,197.3L1440,192L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"></path>
+          </svg>
+        </div>
+
+        <div className={`p-6 ${isEffectiveCollapsed ? 'flex flex-col items-center' : ''} relative z-10`}>
+          <div className={`mb-4 flex items-center gap-2 ${isEffectiveCollapsed ? 'justify-center' : ''}`}>
+            <div className="p-1.5 rounded-lg shadow-lg shadow-accent/20 shrink-0">
+              <CalendarDays className="h-4 w-4 text-accent" />
             </div>
-            {!isSidebarCollapsed && <span className="text-xs font-black tracking-[0.2em] text-brand-blue uppercase transition-opacity duration-300">SlotFiller</span>}
+            {!isEffectiveCollapsed && <span className="text-xs font-black tracking-[0.2em] text-white uppercase transition-opacity duration-300 font-display">SlotFiller</span>}
           </div>
-          {!isSidebarCollapsed && (
+          {!isEffectiveCollapsed && (
             <div className="transition-opacity duration-300">
-              <h1 className="text-2xl font-bold text-deep-blue tracking-tight">{businessName}</h1>
+              <h1 className="text-2xl font-bold text-white tracking-tight">{businessName}</h1>
               <div className="text-xs font-bold text-gray-400 mt-2 uppercase tracking-widest whitespace-nowrap overflow-hidden">
                 {format(currentTime, "dd.MM.yyyy - HH:mm", { locale: de })} Uhr
               </div>
@@ -127,23 +123,23 @@ export function Layout() {
           )}
         </div>
         
-        <nav className={`flex-1 px-4 space-y-2 mt-4 ${isSidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
+        <nav className={`flex-1 px-4 space-y-2 mt-4 relative z-10 ${isEffectiveCollapsed ? 'flex flex-col items-center' : ''}`}>
           <NavLink
             to="/"
             onClick={() => setIsMobileMenuOpen(false)}
-            title={isSidebarCollapsed ? "Übersicht" : ""}
+            title={isEffectiveCollapsed ? "Übersicht" : ""}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
+              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isEffectiveCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
-                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
+                  ? "bg-white/10 text-white border-l-4 border-accent" 
+                  : "text-gray-400 hover:bg-white/5 hover:text-white"
               }`
             }
           >
             <LayoutDashboard className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
+              isEffectiveCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Übersicht
             </span>
@@ -151,32 +147,52 @@ export function Layout() {
           <NavLink
             to="/calendar"
             onClick={() => setIsMobileMenuOpen(false)}
-            title={isSidebarCollapsed ? "Kalender" : ""}
+            title={isEffectiveCollapsed ? "Kalender" : ""}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
+              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isEffectiveCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
-                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
+                  ? "bg-white/10 text-white border-l-4 border-accent" 
+                  : "text-gray-400 hover:bg-white/5 hover:text-white"
               }`
             }
           >
             <Calendar className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
+              isEffectiveCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Kalender
             </span>
           </NavLink>
           <NavLink
+            to="/clients"
+            onClick={() => setIsMobileMenuOpen(false)}
+            title={isEffectiveCollapsed ? "Kunden" : ""}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isEffectiveCollapsed ? 'justify-center w-12' : ''} ${
+                isActive 
+                  ? "bg-white/10 text-white border-l-4 border-accent" 
+                  : "text-gray-400 hover:bg-white/5 hover:text-white"
+              }`
+            }
+          >
+            <Users className="h-5 w-5 shrink-0" />
+            <span className={cn(
+              "transition-all duration-300 whitespace-nowrap overflow-hidden",
+              isEffectiveCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
+            )}>
+              Kunden
+            </span>
+          </NavLink>
+          <NavLink
             to="/notifications"
             onClick={() => setIsMobileMenuOpen(false)}
-            title={isSidebarCollapsed ? "Benachrichtigungen" : ""}
+            title={isEffectiveCollapsed ? "Benachrichtigungen" : ""}
             className={({ isActive }) =>
-              `flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
+              `flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-all ${isEffectiveCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
-                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
+                  ? "bg-white/10 text-white border-l-4 border-accent" 
+                  : "text-gray-400 hover:bg-white/5 hover:text-white"
               }`
             }
           >
@@ -184,56 +200,36 @@ export function Layout() {
               <Bell className="h-5 w-5 shrink-0" />
               <span className={cn(
                 "transition-all duration-300 whitespace-nowrap overflow-hidden",
-                isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
+                isEffectiveCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
               )}>
                 Benachrichtigungen
               </span>
             </div>
-            {!isSidebarCollapsed && unreadNotifications > 0 && (
-              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+            {!isEffectiveCollapsed && unreadNotifications > 0 && (
+              <span className="bg-accent text-deep-blue text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
                 {unreadNotifications}
               </span>
             )}
-            {isSidebarCollapsed && unreadNotifications > 0 && (
-              <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />
+            {isEffectiveCollapsed && unreadNotifications > 0 && (
+              <div className="absolute top-2 right-2 w-2 h-2 bg-accent rounded-full" />
             )}
-          </NavLink>
-          <NavLink
-            to="/clients"
-            onClick={() => setIsMobileMenuOpen(false)}
-            title={isSidebarCollapsed ? "Kunden" : ""}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
-                isActive 
-                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
-                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
-              }`
-            }
-          >
-            <Users className="h-5 w-5 shrink-0" />
-            <span className={cn(
-              "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
-            )}>
-              Kunden
-            </span>
           </NavLink>
           <NavLink
             to="/notes"
             onClick={() => setIsMobileMenuOpen(false)}
-            title={isSidebarCollapsed ? "Notizen" : ""}
+            title={isEffectiveCollapsed ? "Notizen" : ""}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
+              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isEffectiveCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
-                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
+                  ? "bg-white/10 text-white border-l-4 border-accent" 
+                  : "text-gray-400 hover:bg-white/5 hover:text-white"
               }`
             }
           >
             <StickyNote className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
+              isEffectiveCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Notizen
             </span>
@@ -241,41 +237,41 @@ export function Layout() {
           <NavLink
             to="/settings"
             onClick={() => setIsMobileMenuOpen(false)}
-            title={isSidebarCollapsed ? "Einstellungen" : ""}
+            title={isEffectiveCollapsed ? "Einstellungen" : ""}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isSidebarCollapsed ? 'justify-center w-12' : ''} ${
+              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all ${isEffectiveCollapsed ? 'justify-center w-12' : ''} ${
                 isActive 
-                  ? "bg-indigo-50 text-deep-blue border-l-4 border-accent" 
-                  : "text-gray-600 hover:bg-gray-50 hover:text-deep-blue"
+                  ? "bg-white/10 text-white border-l-4 border-accent" 
+                  : "text-gray-400 hover:bg-white/5 hover:text-white"
               }`
             }
           >
             <Settings className="h-5 w-5 shrink-0" />
             <span className={cn(
               "transition-all duration-300 whitespace-nowrap overflow-hidden",
-              isSidebarCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
+              isEffectiveCollapsed ? "w-0 opacity-0 invisible" : "w-auto opacity-100 visible ml-3 delay-150"
             )}>
               Einstellungen
             </span>
           </NavLink>
         </nav>
 
-        <div className={`p-4 border-t border-gray-200 space-y-2 ${isSidebarCollapsed ? 'flex flex-col items-center' : ''}`}>
+        <div className={`p-4 border-t border-white/10 space-y-2 relative z-10 ${isEffectiveCollapsed ? 'flex flex-col items-center' : ''}`}>
           <button 
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="hidden lg:flex items-center gap-3 px-4 py-3 w-full text-gray-600 hover:bg-gray-50 rounded-lg transition-colors text-sm font-bold"
-            title={isSidebarCollapsed ? "Menü aufklappen" : "Menü zuklappen"}
+            className="hidden lg:flex items-center gap-3 px-4 py-3 w-full text-gray-400 hover:bg-white/5 hover:text-white rounded-lg transition-colors text-sm font-bold"
+            title={isEffectiveCollapsed ? "Menü aufklappen" : "Menü zuklappen"}
           >
-            {isSidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-            {!isSidebarCollapsed && <span className="transition-opacity duration-300">Menü zuklappen</span>}
+            {isEffectiveCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
+            {!isEffectiveCollapsed && <span className="transition-opacity duration-300">Menü zuklappen</span>}
           </button>
           <button 
-            onClick={() => setIsLogoutModalOpen(true)} 
-            className={`flex items-center gap-3 px-4 py-3 w-full text-gray-600 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors text-sm font-bold ${isSidebarCollapsed ? 'justify-center w-12' : ''}`}
-            title={isSidebarCollapsed ? "Ausloggen" : ""}
+            onClick={() => setIsLogoutModalOpen(true)}
+            className={`flex items-center gap-3 px-4 py-3 w-full text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors text-sm font-bold ${isEffectiveCollapsed ? 'justify-center w-12' : ''}`}
+            title={isEffectiveCollapsed ? "Abmelden" : ""}
           >
             <LogOut className="h-5 w-5 shrink-0" />
-            {!isSidebarCollapsed && <span className="transition-opacity duration-300">Ausloggen</span>}
+            {!isEffectiveCollapsed && <span className="transition-opacity duration-300">Abmelden</span>}
           </button>
         </div>
       </aside>
@@ -295,12 +291,12 @@ export function Layout() {
         />
       )}
 
-      <Modal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} title="Ausloggen">
+      <Modal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} title="Abmelden">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600">Sind Sie sicher, dass Sie sich ausloggen möchten?</p>
+          <p className="text-sm text-gray-600">Sind Sie sicher, dass Sie sich abmelden möchten?</p>
           <div className="flex gap-3 pt-2">
             <Button variant="outline" className="flex-1" onClick={() => setIsLogoutModalOpen(false)}>Abbrechen</Button>
-            <Button className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" onClick={handleLogout}>Ausloggen</Button>
+            <Button className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" onClick={handleLogout}>Abmelden</Button>
           </div>
         </div>
       </Modal>

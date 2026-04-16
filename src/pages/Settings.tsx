@@ -397,7 +397,6 @@ export function Settings() {
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Einstellungen & SMS</h1>
-        <p className="text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mt-2">Systemeinstellungen & Anbieter-Anbindung</p>
       </div>
 
       <div className="flex flex-col gap-8">
@@ -572,7 +571,10 @@ export function Settings() {
 
           {/* Mitarbeiter Verwalten */}
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Mitarbeiter</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Mitarbeiter</h3>
+              <span className="text-xs font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{employees.length}</span>
+            </div>
             <div className="mb-4">
               <Input
                 value={employeeSearch}
@@ -587,7 +589,27 @@ export function Settings() {
                 .filter(emp => emp.name.toLowerCase().includes(employeeSearch.toLowerCase()))
                 .map((emp) => (
                 <div key={emp.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700" onClick={() => handleEditEmployee(emp)}>
-                  <span className="font-medium text-deep-blue dark:text-white">{emp.name}</span>
+                  <div className="flex flex-col">
+                    <span className="font-medium text-deep-blue dark:text-white">{emp.name}</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {emp.serviceTypes && emp.serviceTypes.length > 0 ? (
+                        <>
+                          {emp.serviceTypes.slice(0, 2).map((s: string) => (
+                            <span key={s} className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wider rounded">
+                              {s}
+                            </span>
+                          ))}
+                          {emp.serviceTypes.length > 2 && (
+                            <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-slate-900 px-1.5 py-0.5 rounded">
+                              +{emp.serviceTypes.length - 2}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 uppercase tracking-widest">Keine Dienstleistungen</span>
+                      )}
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2">
                     <button onClick={(e) => { e.stopPropagation(); handleEditEmployee(emp); }} className="text-gray-400 hover:text-accent">
                       <Edit2 className="h-4 w-4" />
@@ -607,7 +629,10 @@ export function Settings() {
               onClick={() => {
                 setEditingEmployeeId(null);
                 setEmployeeName("");
-                setEmployeeServices(services);
+                setEmployeePhone("");
+                setEmployeeServices([]);
+                setIsCustomEmployeeService(false);
+                setCustomEmployeeService("");
                 setEmployeeHours(openingHours);
                 setIsEmployeeModalOpen(true);
               }} 
@@ -691,6 +716,7 @@ export function Settings() {
           <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Dienstleistungen verwalten</h3>
+              <span className="text-xs font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{services.length}</span>
             </div>
             <div className="mb-4">
               <Input
@@ -840,10 +866,15 @@ export function Settings() {
           </div>
         </div>
       </div>
-      <Modal isOpen={isEmployeeModalOpen} onClose={() => setIsEmployeeModalOpen(false)} title="Mitarbeiter bearbeiten">
+      <Modal 
+        isOpen={isEmployeeModalOpen} 
+        onClose={() => setIsEmployeeModalOpen(false)} 
+        title={editingEmployeeId ? "Mitarbeiter bearbeiten" : "Mitarbeiter anlegen"}
+        headerClassName="bg-slate-500"
+      >
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Name</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name</label>
             <Input 
               value={employeeName} 
               onChange={(e) => setEmployeeName(e.target.value)}
@@ -852,7 +883,7 @@ export function Settings() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Telefonnummer (Optional)</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Telefonnummer (Optional)</label>
             <Input 
               value={employeePhone} 
               onChange={(e) => setEmployeePhone(e.target.value)}
@@ -862,7 +893,7 @@ export function Settings() {
           </div>
           
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistungen</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistungen</label>
             <button
               type="button"
               onClick={() => setIsEmployeeServiceDropdownOpen(!isEmployeeServiceDropdownOpen)}
@@ -912,7 +943,7 @@ export function Settings() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Arbeitszeiten</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Arbeitszeiten</label>
             <div className="space-y-3 max-h-60 overflow-y-auto pr-2 scrollbar-thin">
               {DAYS.map((day) => (
                 <div key={day.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-800">
@@ -994,10 +1025,15 @@ export function Settings() {
         </div>
       </Modal>
 
-      <Modal isOpen={isAbsenceModalOpen} onClose={() => setIsAbsenceModalOpen(false)} title={editingAbsenceId ? "Abwesenheit bearbeiten" : "Abwesenheit eintragen"}>
+      <Modal 
+        isOpen={isAbsenceModalOpen} 
+        onClose={() => setIsAbsenceModalOpen(false)} 
+        title={editingAbsenceId ? "Abwesenheit bearbeiten" : "Abwesenheit eintragen"}
+        headerClassName="bg-slate-500"
+      >
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
             <select 
               className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
               value={absenceData.employeeId}
@@ -1009,7 +1045,7 @@ export function Settings() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Typ</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Typ</label>
             <select 
               className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
               value={absenceData.type}
@@ -1022,11 +1058,11 @@ export function Settings() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Von</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Von</label>
               <Input type="date" value={absenceData.startDate} onChange={(e) => setAbsenceData({...absenceData, startDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
             </div>
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Bis</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Bis</label>
               <Input type="date" value={absenceData.endDate} onChange={(e) => setAbsenceData({...absenceData, endDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
             </div>
           </div>

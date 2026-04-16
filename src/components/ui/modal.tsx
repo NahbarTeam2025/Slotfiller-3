@@ -8,9 +8,10 @@ interface ModalProps {
   title: string;
   children: React.ReactNode;
   className?: string;
+  headerClassName?: string;
 }
 
-export function Modal({ isOpen, onClose, title, children, className }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, className, headerClassName }: ModalProps) {
   if (!isOpen) return null;
 
   return (
@@ -18,13 +19,13 @@ export function Modal({ isOpen, onClose, title, children, className }: ModalProp
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
     >
       <div 
-        className={cn("relative w-full max-w-lg rounded-xl bg-white dark:bg-card-dark shadow-2xl border dark:border-slate-800 max-h-[90vh] flex flex-col", className)}
+        className={cn("relative w-full max-w-lg rounded-xl bg-white dark:bg-card-dark shadow-floating border dark:border-slate-800 max-h-[90vh] flex flex-col overflow-hidden", className)}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-6 border-b dark:border-slate-800">
-          <h2 className="text-xl font-semibold text-deep-blue dark:text-white">{title}</h2>
-          <button onClick={onClose} className="rounded-full p-1 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors">
-            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
+        <div className={cn("flex items-center justify-between p-6 border-b dark:border-slate-800", headerClassName)}>
+          <h2 className={cn("text-xl font-semibold text-deep-blue dark:text-white", headerClassName && "text-white")}>{title}</h2>
+          <button onClick={onClose} className={cn("rounded-full p-1 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors", headerClassName && "hover:bg-white/20")}>
+            <X className={cn("h-5 w-5 text-gray-500 dark:text-gray-400", headerClassName && "text-white")} />
           </button>
         </div>
         <div className="p-6 overflow-y-auto">

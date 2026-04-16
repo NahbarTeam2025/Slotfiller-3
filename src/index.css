@@ -1,18 +1,24 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.bunny.net/css?family=inter:300,400,500,600,700|outfit:400,700,900&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-@utility scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+  .shadow-floating {
+    box-shadow: 0 4px 20px rgba(147, 197, 253, 0.3);
   }
 }
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
   --color-deep-blue: #1a1a2e;
   --color-accent: #00c896;
   --color-accent-hover: #00a87d;
@@ -24,6 +30,9 @@
 @layer base {
   body {
     font-family: var(--font-sans);
-    @apply bg-white text-deep-blue transition-colors duration-300;
+    @apply bg-slate-50 text-deep-blue transition-colors duration-300;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
   }
 }

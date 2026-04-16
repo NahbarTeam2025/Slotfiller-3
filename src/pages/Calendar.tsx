@@ -18,27 +18,13 @@ export function Calendar() {
   const [business, setBusiness] = useState<any>(null);
 
   // Calendar State
-  const [currentMonth, setCurrentMonth] = useState(() => {
-    const saved = localStorage.getItem("calendar_currentMonth");
-    return saved ? new Date(saved) : new Date();
-  });
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const saved = localStorage.getItem("calendar_selectedDate");
-    return saved ? new Date(saved) : new Date();
-  });
-
-  useEffect(() => {
-    localStorage.setItem("calendar_currentMonth", currentMonth.toISOString());
-  }, [currentMonth]);
-
-  useEffect(() => {
-    localStorage.setItem("calendar_selectedDate", selectedDate.toISOString());
-  }, [selectedDate]);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
 
   // Modal State (Booked Slot)
   const [newSlotDate, setNewSlotDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [newSlotTime, setNewSlotTime] = useState("10:00");
-  const [newSlotService, setNewSlotService] = useState("");
+  const [newSlotServices, setNewSlotServices] = useState<string[]>([]);
   const [newSlotEmployee, setNewSlotEmployee] = useState("");
   const [clientName, setClientName] = useState("");
   const [clients, setClients] = useState<any[]>([]);
@@ -54,7 +40,6 @@ export function Calendar() {
   const [clientSearch, setClientSearch] = useState("");
   const [notificationResult, setNotificationResult] = useState<{ success: boolean, notified: number } | null>(null);
   const [workerError, setWorkerError] = useState<string | null>(null);
-  const [newSlotServices, setNewSlotServices] = useState<string[]>([]);
   const [isCustomFreeService, setIsCustomFreeService] = useState(false);
   const [customFreeService, setCustomFreeService] = useState("");
 
@@ -106,7 +91,7 @@ export function Calendar() {
     const unsubClients = onSnapshot(collection(db, `businesses/${businessId}/clients`), (snapshot) => {
       const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setClients(clientsData);
-      setAllClients(clientsData.filter((c: any) => c.active));
+      setAllClients(clientsData.filter((c: any) => c.active !== false));
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, `businesses/${businessId}/clients`);
     });
@@ -152,7 +137,7 @@ export function Calendar() {
   }, [businessId, newSlotServices, isFreeSlotModalOpen, slots]);
 
   const handleCreateBookedSlot = async () => {
-    const finalService = isCustomService && customService.trim() ? customService.trim() : newSlotService;
+    const finalService = isCustomService && customService.trim() ? customService.trim() : newSlotServices.join(", ");
     if (!businessId || !newSlotDate || !newSlotTime || !finalService || !clientName) return;
     setIsSubmitting(true);
 
@@ -244,18 +229,40 @@ export function Calendar() {
     setIsEditMode(true);
     setNewSlotDate(slot.date);
     setNewSlotTime(slot.time);
-    setNewSlotService(slot.serviceType);
+    setNewSlotServices(slot.serviceType ? slot.serviceType.split(", ") : []);
     setNewSlotEmployee(slot.employeeId || "");
     setClientName(slot.bookedBy);
     setIsModalOpen(true);
   };
+
+  useEffect(() => {
+    if (isModalOpen && newSlotTime) {
+      setTimeout(() => {
+        const element = document.getElementById(`calendar-time-slot-${newSlotTime.replace(':', '-')}`);
+        if (element) {
+          element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }, 100);
+    }
+  }, [isModalOpen, newSlotTime]);
+
+  useEffect(() => {
+    if (isFreeSlotModalOpen && newSlotTime) {
+      setTimeout(() => {
+        const element = document.getElementById(`calendar-free-time-slot-${newSlotTime.replace(':', '-')}`);
+        if (element) {
+          element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }, 100);
+    }
+  }, [isFreeSlotModalOpen, newSlotTime]);
 
   const handleCreateFreeSlot = async () => {
     const finalServices = isCustomFreeService && customFreeService.trim() 
       ? [...newSlotServices, customFreeService.trim()]
       : newSlotServices;
 
-    if (!businessId || !newSlotDate || !newSlotTime || finalServices.length === 0) return;
+    if (!businessId || !newSlotDate || !newSlotTime) return;
     setIsSubmitting(true);
 
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
@@ -266,6 +273,9 @@ export function Calendar() {
     }
     if (employee) {
       serviceTypeString += serviceTypeString ? ` bei ${employee.name}` : `Bei ${employee.name}`;
+    }
+    if (!serviceTypeString) {
+      serviceTypeString = "Freier Termin";
     }
 
     try {
@@ -375,12 +385,15 @@ export function Calendar() {
 
   const handleOpenModal = () => {
     setNewSlotDate(format(selectedDate, 'yyyy-MM-dd'));
+    setNewSlotServices([]);
+    setNewSlotEmployee("");
     setIsModalOpen(true);
   };
 
   const handleOpenFreeSlotModal = () => {
     setNewSlotDate(format(selectedDate, 'yyyy-MM-dd'));
     setNewSlotServices([]);
+    setNewSlotEmployee("");
     setSelectedClients([]);
     setIsFreeSlotModalOpen(true);
   };
@@ -535,7 +548,7 @@ export function Calendar() {
   const holidayName = holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
 
   return (
-    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto overflow-x-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8">
         <div>
           <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Kalender</h1>
@@ -569,7 +582,7 @@ export function Calendar() {
             <Plus className="mr-2 h-5 w-5" /> Termin eintragen
           </Button>
           <Button onClick={handleOpenFreeSlotModal} className="bg-accent text-white hover:bg-accent-hover font-bold px-6 shadow-lg shadow-accent/20 border-none">
-            <Clock className="mr-2 h-5 w-5" /> Freien Platz melden
+            <Clock className="mr-2 h-5 w-5" /> Termin melden
           </Button>
         </div>
       </div>
@@ -577,7 +590,7 @@ export function Calendar() {
       <div className="flex flex-col gap-8">
         {/* Calendar View */}
         <div className="w-full">
-          <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
+          <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-4 sm:p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-deep-blue dark:text-white">{monthName} {year}</h2>
               <div className="flex gap-2">
@@ -601,7 +614,7 @@ export function Calendar() {
         {/* Slots List */}
         <div className="w-full">
           <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-            <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50">
+            <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-100 dark:border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-gray-50 dark:bg-slate-800/50">
               <h3 className="text-lg font-bold text-deep-blue dark:text-white">
                 Termine am {format(selectedDate, 'dd.MM.yyyy')}
               </h3>
@@ -632,14 +645,17 @@ export function Calendar() {
                 
                 return (
                   <div key={time} className="flex border-b border-gray-100 dark:border-slate-800 min-h-[70px]">
-                    <div className="w-16 sm:w-24 py-4 px-2 sm:px-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right bg-gray-50/50 dark:bg-slate-800/20">
-                      {time}
+                    <div className="w-16 sm:w-24 py-4 px-2 sm:px-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right bg-gray-50/50 dark:bg-slate-800/20 flex flex-col justify-center">
+                      <div className="font-bold">{time}</div>
+                      <div className={`text-[10px] mt-1 font-bold ${remainingCapacity > 0 ? 'text-accent' : 'text-red-500'}`}>
+                        {remainingCapacity}/{capacity}
+                      </div>
                     </div>
                     <div className="flex-1 p-2 space-y-2">
                       {timeSlotsData.map(slot => (
                         <div 
                           key={slot.id} 
-                          className={`border rounded-lg p-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-sm group/card cursor-pointer transition-colors ${
+                          className={`border rounded-lg p-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shadow-floating group/card cursor-pointer transition-colors ${
                             slot.status === 'booked' 
                               ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/20' 
                               : 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30'
@@ -647,17 +663,17 @@ export function Calendar() {
                           onClick={() => slot.status === 'booked' && openEditModal(slot)}
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="font-bold text-deep-blue dark:text-white truncate">{slot.status === 'booked' ? slot.bookedBy : 'Kunden benachrichtigt'}</div>
+                            <div className="font-bold text-deep-blue dark:text-white text-sm sm:text-base truncate">{slot.status === 'booked' ? slot.bookedBy : 'Kunden benachrichtigt'}</div>
                             <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 truncate">{slot.serviceType} {slot.employeeName ? `• ${slot.employeeName}` : ''}</div>
                           </div>
-                          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
                             {slot.status === 'booked' ? (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
                                 <CheckCircle className="w-3 h-3 mr-1" /> Gebucht
                               </span>
                             ) : (
                               <span 
-                                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900/50"
+                                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 cursor-pointer hover:bg-indigo-200 dark:hover:bg-indigo-900/50"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedOpenSlot(slot);
@@ -670,14 +686,15 @@ export function Calendar() {
                             {slot.status === 'open' && (
                               <Button 
                                 size="sm" 
-                                className="bg-accent text-deep-blue hover:bg-accent-hover font-bold text-xs"
+                                className="bg-accent text-deep-blue hover:bg-accent-hover font-bold text-xs flex-1 sm:flex-none"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSlotToManuallyBook(slot);
                                   setIsManualBooking(true);
                                   setNewSlotDate(slot.date);
                                   setNewSlotTime(slot.time);
-                                  setNewSlotService(slot.serviceType);
+                                  setNewSlotServices([]);
+                                  setNewSlotEmployee("");
                                   setIsModalOpen(true);
                                 }}
                               >
@@ -699,7 +716,7 @@ export function Calendar() {
                       ))}
 
                       {remainingCapacity > 0 && (
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                           <div 
                             className="flex-1 flex items-center px-4 py-2 text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-slate-800/50 cursor-pointer rounded-lg transition-colors border border-dashed border-gray-200 dark:border-slate-700 group"
                             onClick={() => {
@@ -715,11 +732,13 @@ export function Calendar() {
                             className="flex-1 flex items-center px-4 py-2 text-accent hover:bg-accent/5 cursor-pointer rounded-lg transition-colors border border-dashed border-accent/30 hover:border-accent group"
                             onClick={() => {
                               setNewSlotTime(time);
+                              setNewSlotServices([]);
+                              setNewSlotEmployee("");
                               handleOpenFreeSlotModal();
                             }}
                           >
                             <span className="text-sm font-medium flex items-center">
-                              <Clock className="w-4 h-4 mr-1" /> Freien Platz melden
+                              <Clock className="w-4 h-4 mr-1" /> Termin melden
                             </span>
                           </div>
                         </div>
@@ -739,33 +758,26 @@ export function Calendar() {
         setIsEditMode(false);
         setEditingSlotId(null);
         setSlotToManuallyBook(null);
-      }} title={isEditMode ? "Termin bearbeiten" : (isManualBooking ? "Termin manuell vergeben" : "Gebuchten Termin eintragen")}>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-          {isEditMode 
-            ? "Passen Sie die Details des gebuchten Termins an." 
-            : (isManualBooking 
-              ? "Tragen Sie hier den Kunden ein, dem Sie diesen Slot manuell zugewiesen haben." 
-              : "Tragen Sie hier einen Termin ein, der bereits fest vergeben ist.")}
-        </p>
-        
+        setIsCustomService(false);
+        setCustomService("");
+      }} 
+      title={isEditMode ? "Termin bearbeiten" : (isManualBooking ? "Termin manuell vergeben" : "Termin eintragen")}
+      headerClassName="bg-deep-blue"
+      >
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Datum</label>
-            <Input 
-              type="date" 
-              value={newSlotDate} 
-              onChange={(e) => setNewSlotDate(e.target.value)}
-              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-            />
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
-              <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
-                {generateTimeSlots().map((time) => (
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Uhrzeit</label>
+            <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
+              {generateTimeSlots().map((time) => {
+                const timeSlotsData = slots.filter(s => s.date === newSlotDate && s.time === time);
+                const bookedCount = timeSlotsData.filter(s => s.status === 'booked').length;
+                const capacity = getCapacityForTime(time, newSlotDate);
+                const remainingCapacity = capacity - bookedCount;
+                
+                return (
                   <button
                     key={time}
+                    id={`calendar-time-slot-${time.replace(':', '-')}`}
                     onClick={() => setNewSlotTime(time)}
                     className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
                       newSlotTime === time 
@@ -773,95 +785,42 @@ export function Calendar() {
                         : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
                     }`}
                   >
-                    {time}
+                    <div className="flex justify-between items-center w-full">
+                      <span>{time}</span>
+                      <span className={`text-[10px] font-bold ${remainingCapacity > 0 ? 'text-accent' : 'text-red-500'}`}>
+                        {remainingCapacity}/{capacity}
+                      </span>
+                    </div>
                   </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
-              <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
-                <div className="p-2 border-b border-gray-100 dark:border-slate-700">
-                  <Input
-                    placeholder="Dienstleistung suchen..."
-                    value={slotServiceSearch}
-                    onChange={(e) => setSlotServiceSearch(e.target.value)}
-                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                  />
-                </div>
-                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
-                  {[...business?.serviceTypes || []]
-                    .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
-                    .sort((a, b) => a.localeCompare(b))
-                    .map((service: string) => (
-                    <button
-                      key={service}
-                      onClick={() => {
-                        setIsCustomService(false);
-                        setNewSlotService(service);
-                        setSlotServiceSearch("");
-                      }}
-                      className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                        !isCustomService && newSlotService === service 
-                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {service}
-                    </button>
-                  ))}
-                </div>
-                <div className="p-2 border-t border-gray-100 dark:border-slate-700">
-                    <button
-                      onClick={() => {
-                        setIsCustomService(true);
-                        setSlotServiceSearch("");
-                      }}
-                      className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                        isCustomService 
-                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      Individuell...
-                    </button>
-                </div>
-              </div>
-              {isCustomService && (
-                <Input 
-                  placeholder="Eigene Dienstleistung..." 
-                  value={customService}
-                  onChange={(e) => setCustomService(e.target.value)}
-                  className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                />
-              )}
+                );
+              })}
             </div>
           </div>
 
-          <div className="relative">
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-            <button
-              type="button"
-              onClick={() => setIsSlotEmployeeDropdownOpen(!isSlotEmployeeDropdownOpen)}
-              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white"
-            >
-              <span>{newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee)?.name : "Kein Mitarbeiter ausgewählt"}</span>
-              <ChevronDown className={`h-4 w-4 transition-transform ${isSlotEmployeeDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isSlotEmployeeDropdownOpen && (
-              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-[220px] flex flex-col">
-                <div className="p-2 border-b border-gray-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-20">
-                  <Input
-                    placeholder="Mitarbeiter suchen..."
-                    value={slotEmployeeSearch}
-                    onChange={(e) => setSlotEmployeeSearch(e.target.value)}
-                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                    autoFocus
-                  />
-                </div>
-                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin">
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
+            <Input 
+              type="date" 
+              value={newSlotDate} 
+              onChange={(e) => setNewSlotDate(e.target.value)}
+              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Mitarbeiter suchen..."
+                  value={slotEmployeeSearch}
+                  onChange={(e) => setSlotEmployeeSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
                 <button
-                  onClick={() => { setNewSlotEmployee(""); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
+                  onClick={() => { setNewSlotEmployee(""); setSlotEmployeeSearch(""); }}
                   className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
                     newSlotEmployee === "" 
                       ? 'bg-accent/20 text-deep-blue dark:text-white' 
@@ -871,12 +830,22 @@ export function Calendar() {
                   Kein Mitarbeiter ausgewählt
                 </button>
                 {[...business?.employees || []]
-                  .filter(e => e.name.toLowerCase().includes(slotEmployeeSearch.toLowerCase()))
-                  .sort((a, b) => a.name.localeCompare(b))
+                  .filter(e => e.name.toLowerCase().startsWith(slotEmployeeSearch.toLowerCase()))
+                  .filter(e => {
+                    const isBooked = slots.some(s => 
+                      s.date === newSlotDate && 
+                      s.time === newSlotTime && 
+                      s.status === 'booked' && 
+                      s.employeeId === e.id &&
+                      s.id !== editingSlotId
+                    );
+                    return !isBooked;
+                  })
+                  .sort((a, b) => a.name.localeCompare(b.name))
                   .map((emp: any) => (
                   <button
                     key={emp.id}
-                    onClick={() => { setNewSlotEmployee(emp.id); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
+                    onClick={() => { setNewSlotEmployee(emp.id); setSlotEmployeeSearch(""); }}
                     className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
                       newSlotEmployee === emp.id 
                         ? 'bg-accent/20 text-deep-blue dark:text-white' 
@@ -886,13 +855,70 @@ export function Calendar() {
                     {emp.name}
                   </button>
                 ))}
-                </div>
               </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistung</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Dienstleistung suchen..."
+                  value={slotServiceSearch}
+                  onChange={(e) => setSlotServiceSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {(() => {
+                  const employee = business?.employees?.find((e: any) => e.id === newSlotEmployee);
+                  const availableServices = employee?.serviceTypes || business?.serviceTypes || [];
+                  return [...availableServices]
+                    .filter(s => s.toLowerCase().startsWith(slotServiceSearch.toLowerCase()))
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((service: string) => (
+                    <label key={service} className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newSlotServices.includes(service)}
+                        onChange={() => {
+                          setIsCustomService(false);
+                          setNewSlotServices(prev => 
+                            prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
+                          );
+                        }}
+                        className="accent-accent"
+                      />
+                      <span>{service}</span>
+                    </label>
+                  ));
+                })()}
+              </div>
+              <div className="p-2 border-t border-gray-100 dark:border-slate-700">
+                  <label className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isCustomService}
+                      onChange={() => setIsCustomService(!isCustomService)}
+                      className="accent-accent"
+                    />
+                    <span>Individuell...</span>
+                  </label>
+              </div>
+            </div>
+            {isCustomService && (
+              <Input 
+                placeholder="Eigene Dienstleistung..." 
+                value={customService}
+                onChange={(e) => setCustomService(e.target.value)}
+                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
             )}
           </div>
 
           <div className="relative">
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Name des Kunden</label>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name des Kunden</label>
               <Input 
                 value={clientName} 
                 onChange={(e) => {
@@ -907,7 +933,7 @@ export function Calendar() {
               {showClientDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-48 overflow-y-auto">
                   {clients
-                    .filter(c => c.name.toLowerCase().includes(clientName.toLowerCase()))
+                    .filter(c => c.name.toLowerCase().startsWith(clientName.toLowerCase()))
                     .map(client => (
                     <div 
                       key={client.id} 
@@ -922,12 +948,12 @@ export function Calendar() {
                       <span className="text-gray-400 dark:text-gray-500 text-xs">{client.phone}</span>
                     </div>
                   ))}
-                  {clients.filter(c => c.name.toLowerCase().includes(clientName.toLowerCase())).length === 0 && (
+                  {clients.filter(c => c.name.toLowerCase().startsWith(clientName.toLowerCase())).length === 0 && (
                     <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">Keine passenden Kunden gefunden</div>
                   )}
                 </div>
               )}
-            </div>
+          </div>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
             <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsModalOpen(false)}>Abbrechen</Button>
@@ -936,7 +962,7 @@ export function Calendar() {
               onClick={handleCreateBookedSlot}
               disabled={isSubmitting || !clientName}
             >
-              {isSubmitting ? "Wird gespeichert..." : "Termin speichern"}
+              {isSubmitting ? "Wird gespeichert..." : (isEditMode ? "Änderungen speichern" : "Termin eintragen")}
             </Button>
           </div>
         </div>
@@ -972,12 +998,45 @@ export function Calendar() {
         setIsFreeSlotModalOpen(false);
         setIsCustomFreeService(false);
         setCustomFreeService("");
-      }} title="Neuer freier Slot">
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Melden Sie einen freien Slot, um sofort passende Kunden zu benachrichtigen.</p>
-        
+      }} 
+      title="Termin melden"
+      headerClassName="bg-accent"
+      >
         <div className="space-y-6">
           <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Datum</label>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Uhrzeit</label>
+            <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
+              {generateTimeSlots().map((time) => {
+                const timeSlotsData = slots.filter(s => s.date === newSlotDate && s.time === time);
+                const bookedCount = timeSlotsData.filter(s => s.status === 'booked').length;
+                const capacity = getCapacityForTime(time, newSlotDate);
+                const remainingCapacity = capacity - bookedCount;
+                
+                return (
+                  <button
+                    key={time}
+                    id={`calendar-free-time-slot-${time.replace(':', '-')}`}
+                    onClick={() => setNewSlotTime(time)}
+                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotTime === time 
+                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center w-full">
+                      <span>{time}</span>
+                      <span className={`text-[10px] font-bold ${remainingCapacity > 0 ? 'text-accent' : 'text-red-500'}`}>
+                        {remainingCapacity}/{capacity}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Datum</label>
             <Input 
               type="date" 
               value={newSlotDate} 
@@ -987,27 +1046,58 @@ export function Calendar() {
             />
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
-              <div className="overflow-y-auto border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 max-h-[200px] p-1 scrollbar-thin">
-                {generateTimeSlots().map((time) => (
+          <div className="mb-6">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Mitarbeiter suchen..."
+                  value={slotEmployeeSearch}
+                  onChange={(e) => setSlotEmployeeSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                <button
+                  onClick={() => { setNewSlotEmployee(""); setSlotEmployeeSearch(""); }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                    newSlotEmployee === "" 
+                      ? 'bg-accent/20 text-deep-blue dark:text-white' 
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Kein Mitarbeiter ausgewählt
+                </button>
+                {[...business?.employees || []]
+                  .filter(e => e.name.toLowerCase().startsWith(slotEmployeeSearch.toLowerCase()))
+                  .filter(e => {
+                    const hasSlot = slots.some(s => 
+                      s.date === newSlotDate && 
+                      s.time === newSlotTime && 
+                      s.employeeId === e.id
+                    );
+                    return !hasSlot;
+                  })
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((emp: any) => (
                   <button
-                    key={time}
-                    onClick={() => setNewSlotTime(time)}
-                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                      newSlotTime === time 
+                    key={emp.id}
+                    onClick={() => { setNewSlotEmployee(emp.id); setSlotEmployeeSearch(""); }}
+                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
+                      newSlotEmployee === emp.id 
                         ? 'bg-accent/20 text-deep-blue dark:text-white' 
                         : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
                     }`}
                   >
-                    {time}
+                    {emp.name}
                   </button>
                 ))}
               </div>
             </div>
-          <div className="mb-6">
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
+          </div>
+
+          <div className="mt-8">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistungen</label>
             <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
               <div className="p-2 border-b border-gray-100 dark:border-slate-700">
                 <Input
@@ -1018,106 +1108,55 @@ export function Calendar() {
                 />
               </div>
               <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
-                {[...business?.serviceTypes || []]
-                  .filter(s => s.toLowerCase().includes(slotServiceSearch.toLowerCase()))
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((service: string) => (
-                  <button
-                    key={service}
-                    onClick={() => {
-                      setIsCustomFreeService(false);
-                      setNewSlotServices([service]);
-                      setSlotServiceSearch("");
-                    }}
-                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                      !isCustomFreeService && newSlotServices.includes(service) 
-                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {service}
-                  </button>
-                ))}
+                {(() => {
+                  const employee = business?.employees?.find((e: any) => e.id === newSlotEmployee);
+                  const availableServices = employee?.serviceTypes || business?.serviceTypes || [];
+                  return [...availableServices]
+                    .filter(s => s.toLowerCase().startsWith(slotServiceSearch.toLowerCase()))
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((service: string) => (
+                    <label
+                      key={service}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={newSlotServices.includes(service)}
+                        onChange={() => {
+                          if (newSlotServices.includes(service)) {
+                            setNewSlotServices(newSlotServices.filter(s => s !== service));
+                          } else {
+                            setNewSlotServices([...newSlotServices, service]);
+                          }
+                        }}
+                        className="accent-accent"
+                      />
+                      <span>{service}</span>
+                    </label>
+                  ));
+                })()}
               </div>
               <div className="p-2 border-t border-gray-100 dark:border-slate-700">
-                  <button
-                    onClick={() => {
-                      setIsCustomFreeService(true);
-                      setSlotServiceSearch("");
-                    }}
-                    className={`w-full px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                      isCustomFreeService 
-                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    Individuell...
-                  </button>
+                  <label className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isCustomFreeService}
+                      onChange={() => setIsCustomFreeService(!isCustomFreeService)}
+                      className="accent-accent"
+                    />
+                    <span>Individuell...</span>
+                  </label>
               </div>
             </div>
-            {isCustomFreeService && (
-              <Input 
-                placeholder="Eigene Dienstleistung..." 
-                value={customFreeService}
-                onChange={(e) => setCustomFreeService(e.target.value)}
-                className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-              />
-            )}
-          </div>
-          </div>
-
-          <div className="relative">
-            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-            <button
-              type="button"
-              onClick={() => setIsSlotEmployeeDropdownOpen(!isSlotEmployeeDropdownOpen)}
-              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white"
-            >
-              <span>{newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee)?.name : "Kein Mitarbeiter ausgewählt"}</span>
-              <ChevronDown className={`h-4 w-4 transition-transform ${isSlotEmployeeDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isSlotEmployeeDropdownOpen && (
-              <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-md shadow-lg max-h-[220px] flex flex-col">
-                <div className="p-2 border-b border-gray-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 z-20">
-                  <Input
-                    placeholder="Mitarbeiter suchen..."
-                    value={slotEmployeeSearch}
-                    onChange={(e) => setSlotEmployeeSearch(e.target.value)}
-                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                    autoFocus
-                  />
-                </div>
-                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin">
-                <button
-                  onClick={() => { setNewSlotEmployee(""); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
-                  className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                    newSlotEmployee === "" 
-                      ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  Kein Mitarbeiter ausgewählt
-                </button>
-                {[...business?.employees || []]
-                  .filter(e => e.name.toLowerCase().includes(slotEmployeeSearch.toLowerCase()))
-                  .sort((a, b) => a.name.localeCompare(b))
-                  .map((emp: any) => (
-                  <button
-                    key={emp.id}
-                    onClick={() => { setNewSlotEmployee(emp.id); setIsSlotEmployeeDropdownOpen(false); setSlotEmployeeSearch(""); }}
-                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                      newSlotEmployee === emp.id 
-                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {emp.name}
-                  </button>
-                ))}
-                </div>
-              </div>
-            )}
-          </div>
+          {isCustomFreeService && (
+            <Input 
+              placeholder="Eigene Dienstleistung..." 
+              value={customFreeService}
+              onChange={(e) => setCustomFreeService(e.target.value)}
+              className="mt-2 mb-6 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+            />
+          )}
+        </div>
 
           <div className="space-y-3">
             <Input 
@@ -1137,7 +1176,7 @@ export function Calendar() {
             </div>
             <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
               {matchingClients
-                .filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()))
+                .filter(c => c.name.toLowerCase().startsWith(clientSearch.toLowerCase()))
                 .map(client => (
                 <div 
                   key={client.id}
@@ -1169,7 +1208,12 @@ export function Calendar() {
         </div>
       </Modal>
 
-      <Modal isOpen={isNotifiedClientsModalOpen} onClose={() => setIsNotifiedClientsModalOpen(false)} title="Benachrichtigte Kunden">
+      <Modal 
+        isOpen={isNotifiedClientsModalOpen} 
+        onClose={() => setIsNotifiedClientsModalOpen(false)} 
+        title="Benachrichtigte Kunden"
+        headerClassName="bg-orange-500"
+      >
         <div className="space-y-4">
           <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
             {!selectedOpenSlot?.notifiedClients || selectedOpenSlot.notifiedClients.length === 0 ? (
@@ -1195,6 +1239,8 @@ export function Calendar() {
                 setIsNotifiedClientsModalOpen(false);
                 setAdditionalClients([]);
                 setClientSearch("");
+                setAdditionalEmployeeId(selectedOpenSlot?.employeeId || "");
+                setAdditionalServiceType("");
                 setIsNotifyMoreModalOpen(true);
               }}
             >
@@ -1204,81 +1250,87 @@ export function Calendar() {
         </div>
       </Modal>
 
-      <Modal isOpen={isNotifyMoreModalOpen} onClose={() => {
-        setIsNotifyMoreModalOpen(false);
-        setIsCustomNotifyService(false);
-        setCustomNotifyService("");
-      }} title="Weitere Kunden benachrichtigen">
+      <Modal 
+        isOpen={isNotifyMoreModalOpen} 
+        onClose={() => {
+          setIsNotifyMoreModalOpen(false);
+          setIsCustomNotifyService(false);
+          setCustomNotifyService("");
+          setSlotServiceSearch("");
+          setSlotEmployeeSearch("");
+        }} 
+        title="Weitere Kunden benachrichtigen"
+        headerClassName="bg-accent"
+      >
         <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Dienstleistungen</label>
-              <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin mb-2">
-                {[...business?.serviceTypes || []].sort((a, b) => a.localeCompare(b)).map((service: string) => (
-                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+          <div className="mb-6">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
+            <div className="p-3 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-sm font-medium text-deep-blue dark:text-white">
+              {selectedOpenSlot?.employeeName || "Kein Mitarbeiter ausgewählt"}
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistungen</label>
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Dienstleistung suchen..."
+                  value={slotServiceSearch}
+                  onChange={(e) => setSlotServiceSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {(() => {
+                  const employee = business?.employees?.find((e: any) => e.id === additionalEmployeeId);
+                  const availableServices = employee?.serviceTypes || business?.serviceTypes || [];
+                  return [...availableServices]
+                    .filter(s => s.toLowerCase().startsWith(slotServiceSearch.toLowerCase()))
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((service: string) => (
+                    <label
+                      key={service}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={additionalServiceType.split(', ').includes(service)}
+                        onChange={() => {
+                          const services = additionalServiceType ? additionalServiceType.split(', ').filter(Boolean) : [];
+                          if (services.includes(service)) {
+                            setAdditionalServiceType(services.filter(s => s !== service).join(', '));
+                          } else {
+                            setAdditionalServiceType([...services, service].join(', '));
+                          }
+                        }}
+                        className="accent-accent"
+                      />
+                      <span>{service}</span>
+                    </label>
+                  ));
+                })()}
+              </div>
+              <div className="p-2 border-t border-gray-100 dark:border-slate-700">
+                  <label className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={additionalServiceType.includes(service)}
-                      onChange={() => {
-                        const services = additionalServiceType ? additionalServiceType.split(', ') : [];
-                        if (services.includes(service)) {
-                          setAdditionalServiceType(services.filter(s => s !== service).join(', '));
-                        } else {
-                          setAdditionalServiceType([...services, service].join(', '));
-                        }
-                      }}
-                      className="accent-accent shrink-0"
+                      checked={isCustomNotifyService}
+                      onChange={() => setIsCustomNotifyService(!isCustomNotifyService)}
+                      className="accent-accent"
                     />
-                    <span className="truncate">{service}</span>
+                    <span>Individuell...</span>
                   </label>
-                ))}
-              </div>
-              <label className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
-                <input
-                  type="checkbox"
-                  checked={isCustomNotifyService}
-                  onChange={() => setIsCustomNotifyService(!isCustomNotifyService)}
-                  className="accent-accent shrink-0"
-                />
-                <span className="truncate">Individuell...</span>
-              </label>
-              {isCustomNotifyService && (
-                <Input 
-                  placeholder="Eigene Dienstleistung..." 
-                  value={customNotifyService}
-                  onChange={(e) => setCustomNotifyService(e.target.value)}
-                  className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                />
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter (Optional)</label>
-              <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-2 scrollbar-thin">
-                <button
-                  onClick={() => setAdditionalEmployeeId("")}
-                  className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
-                    additionalEmployeeId === "" 
-                      ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
-                      : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  Kein Mitarbeiter ausgewählt
-                </button>
-                {[...business?.employees || []].sort((a, b) => a.name.localeCompare(b)).map((emp: any) => (
-                  <button
-                    key={emp.id}
-                    onClick={() => setAdditionalEmployeeId(emp.id)}
-                    className={`p-3 rounded-lg text-sm font-medium text-left transition-colors border-2 ${
-                      additionalEmployeeId === emp.id 
-                        ? 'bg-accent/20 text-deep-blue dark:text-white border-accent' 
-                        : 'bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-gray-400 border-transparent hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    {emp.name}
-                  </button>
-                ))}
               </div>
             </div>
+            {isCustomNotifyService && (
+              <Input 
+                placeholder="Eigene Dienstleistung..." 
+                value={customNotifyService}
+                onChange={(e) => setCustomNotifyService(e.target.value)}
+                className="mt-2 mb-6 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            )}
           </div>
 
           <div className="space-y-3">
@@ -1289,7 +1341,7 @@ export function Calendar() {
               className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
             />
             <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">
                 Verfügbare Kunden ({allClients
                   .filter(c => !(selectedOpenSlot?.notifiedClients || []).includes(c.id))
                   .filter(c => {
@@ -1325,7 +1377,7 @@ export function Calendar() {
                   if (selectedServices.length === 0) return true;
                   return selectedServices.some(s => c.serviceTypes?.includes(s));
                 })
-                .filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()))
+                .filter(c => c.name.toLowerCase().startsWith(clientSearch.toLowerCase()))
                 .map(client => (
                 <div 
                   key={client.id}

@@ -16,6 +16,7 @@ export function FreeSlots() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [slotToDelete, setSlotToDelete] = useState<any>(null);
   const [business, setBusiness] = useState<any>(null);
+  const [sortBy, setSortBy] = useState<'time' | 'capacity'>(() => (localStorage.getItem("freeSlots_sortBy") as any) || 'time');
 
   // Calendar State
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -34,6 +35,10 @@ export function FreeSlots() {
   useEffect(() => {
     localStorage.setItem("freeSlots_selectedDate", selectedDate.toISOString());
   }, [selectedDate]);
+
+  useEffect(() => {
+    localStorage.setItem("freeSlots_sortBy", sortBy);
+  }, [sortBy]);
 
   // Modal State
   const [newSlotDate, setNewSlotDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -76,7 +81,7 @@ export function FreeSlots() {
 
     const unsubClients = onSnapshot(collection(db, `businesses/${businessId}/clients`), (snapshot) => {
       const clientsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllClients(clientsData.filter((c: any) => c.active));
+      setAllClients(clientsData.filter((c: any) => c.active !== false));
     });
 
     return () => {
@@ -92,7 +97,6 @@ export function FreeSlots() {
     const fetchMatchingClients = async () => {
       const q = query(
         collection(db, `businesses/${businessId}/clients`),
-        where("active", "==", true),
         where("serviceTypes", "array-contains", newSlotService)
       );
       const snapshot = await getDocs(q);
@@ -106,7 +110,7 @@ export function FreeSlots() {
 
       const eligibleClients = snapshot.docs.filter(doc => {
         const client = doc.data();
-        return !futureBookedClients.includes(client.name);
+        return client.active !== false && !futureBookedClients.includes(client.name);
       });
 
       setMatchingClientsCount(eligibleClients.length);
@@ -316,12 +320,27 @@ export function FreeSlots() {
   }
 
   // Filter out slots that are fully booked based on capacity
-  timeSlots = timeSlots.filter(time => {
+  const availableTimeSlots = timeSlots.filter(time => {
     const bookedCount = filteredSlots.filter(s => s.status === 'booked' && s.time === time).length;
     return bookedCount < totalCapacity;
   });
 
-  const freeSlotsCount = timeSlots.length;
+  // Sort time slots
+  const sortedTimeSlots = [...availableTimeSlots].sort((a, b) => {
+    if (sortBy === 'capacity') {
+      const bookedA = filteredSlots.filter(s => s.status === 'booked' && s.time === a).length;
+      const bookedB = filteredSlots.filter(s => s.status === 'booked' && s.time === b).length;
+      const remainingA = totalCapacity - bookedA;
+      const remainingB = totalCapacity - bookedB;
+      
+      if (remainingA !== remainingB) {
+        return remainingB - remainingA; // More capacity first
+      }
+    }
+    return a.localeCompare(b); // Default to time sort
+  });
+
+  const freeSlotsCount = sortedTimeSlots.length;
 
   const hd = business?.federalState ? new Holidays('DE', business.federalState) : null;
   const holiday = (hd ? hd.isHoliday(selectedDate) : null) as any;
@@ -398,6 +417,20 @@ export function FreeSlots() {
                 Freie Plätze am {format(selectedDate, 'dd.MM.yyyy')}
               </h3>
               <div className="flex items-center gap-4">
+                <div className="flex items-center bg-white dark:bg-slate-900 rounded-lg p-1 border border-gray-200 dark:border-slate-700">
+                  <button 
+                    onClick={() => setSortBy('time')}
+                    className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${sortBy === 'time' ? 'bg-deep-blue dark:bg-accent text-white dark:text-deep-blue shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                  >
+                    Uhrzeit
+                  </button>
+                  <button 
+                    onClick={() => setSortBy('capacity')}
+                    className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest rounded-md transition-all ${sortBy === 'capacity' ? 'bg-deep-blue dark:bg-accent text-white dark:text-deep-blue shadow-sm' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'}`}
+                  >
+                    Verfügbarkeit
+                  </button>
+                </div>
                 {totalCapacity === 0 && (
                   <span className="text-xs font-bold tracking-widest text-red-500 uppercase">Keine Mitarbeiter verfügbar</span>
                 )}
@@ -415,7 +448,7 @@ export function FreeSlots() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Heute ist ein gesetzlicher Feiertag.</p>
                   </div>
                 </div>
-              ) : timeSlots.map(time => {
+              ) : sortedTimeSlots.map(time => {
                 const openSlot = filteredSlots.find(s => s.status === 'open' && s.time === time);
                 const bookedCount = filteredSlots.filter(s => s.status === 'booked' && s.time === time).length;
                 const remainingCapacity = totalCapacity - bookedCount;
@@ -573,8 +606,8 @@ export function FreeSlots() {
                     const available = allClients
                       .filter(c => !newSlotService || c.serviceTypes?.includes(newSlotService))
                       .filter(c => 
-                        c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
-                        c.phone?.toLowerCase().includes(clientSearch.toLowerCase())
+                        c.name.toLowerCase().startsWith(clientSearch.toLowerCase()) || 
+                        c.phone?.toLowerCase().startsWith(clientSearch.toLowerCase())
                       );
                     setSelectedClients(selectedClients.length === available.length ? [] : available.map(c => c.id));
                   }}
@@ -587,8 +620,8 @@ export function FreeSlots() {
                 {allClients
                   .filter(c => !newSlotService || c.serviceTypes?.includes(newSlotService))
                   .filter(c => 
-                    c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
-                    c.phone?.toLowerCase().includes(clientSearch.toLowerCase())
+                    c.name.toLowerCase().startsWith(clientSearch.toLowerCase()) || 
+                    c.phone?.toLowerCase().startsWith(clientSearch.toLowerCase())
                   )
                   .map(client => (
                   <div 
