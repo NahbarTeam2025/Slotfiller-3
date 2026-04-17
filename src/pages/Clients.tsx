@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { collection, query, orderBy, onSnapshot, addDoc, doc, updateDoc, deleteDoc, serverTimestamp, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
@@ -52,6 +52,7 @@ export function Clients() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAppointmentModalOpen, setIsAppointmentModalOpen] = useState(false);
   const [selectedClientAppointments, setSelectedClientAppointments] = useState<any[]>([]);
+  const [selectedClientNotifiedSlots, setSelectedClientNotifiedSlots] = useState<any[]>([]);
   const [isDeleteAppointmentModalOpen, setIsDeleteAppointmentModalOpen] = useState(false);
   const [appointmentToDeleteId, setAppointmentToDeleteId] = useState<string | null>(null);
   const [isEditSlotModalOpen, setIsEditSlotModalOpen] = useState(false);
@@ -207,8 +208,7 @@ export function Clients() {
     });
 
     const qSlots = query(
-      collection(db, `businesses/${businessId}/slots`),
-      where("status", "==", "booked")
+      collection(db, `businesses/${businessId}/slots`)
     );
     const unsubSlots = onSnapshot(qSlots, (snapshot) => {
       const slotsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -398,34 +398,39 @@ export function Clients() {
     }
   };
 
-  const filteredClients = clients
-    .filter(client => {
-      const nameStr = client.name || "";
-      const phoneStr = client.phone || "";
-      const matchesSearch = nameStr.toLowerCase().startsWith(searchQuery.toLowerCase()) || 
-                            phoneStr.startsWith(searchQuery);
-      const matchesService = filterService === "all" || (client.serviceTypes && client.serviceTypes.includes(filterService));
-      
-      const now = new Date();
-      const delayMinutes = parseInt(business?.appointmentStatusDelay || "0");
-      const effectiveNow = new Date(now.getTime() - delayMinutes * 60000);
-      
-      const nowString = format(effectiveNow, 'yyyy-MM-dd');
-      const nowTime = format(effectiveNow, 'HH:mm');
-      
-      const clientAppointments = slots.filter(s => 
-        s.bookedBy === nameStr && 
-        (s.date > nowString || (s.date === nowString && s.time >= nowTime))
-      );
-      const hasAppointment = clientAppointments.length > 0;
-      const matchesAppointment = filterAppointment === "all" || 
-                                 (filterAppointment === "yes" && hasAppointment) || 
-                                 (filterAppointment === "no" && !hasAppointment);
-      const matchesTime = filterTime === "all" || (client.preferredTimes && client.preferredTimes.includes(filterTime));
-      
-      return matchesSearch && matchesService && matchesAppointment && matchesTime;
-    })
-    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  const filteredClients = useMemo(() => {
+    const now = new Date();
+    const delayMinutes = parseInt(business?.appointmentStatusDelay || "0");
+    const effectiveNow = new Date(now.getTime() - delayMinutes * 60000);
+    const nowString = format(effectiveNow, 'yyyy-MM-dd');
+    const nowTime = format(effectiveNow, 'HH:mm');
+
+    // Create a map of clients with future appointments for O(1) lookup
+    const futureAppointmentClientNames = new Set();
+    slots.forEach(s => {
+      if (s.bookedBy && (s.date > nowString || (s.date === nowString && s.time >= nowTime))) {
+        futureAppointmentClientNames.add(s.bookedBy);
+      }
+    });
+
+    return clients
+      .filter(client => {
+        const nameStr = client.name || "";
+        const phoneStr = client.phone || "";
+        const matchesSearch = nameStr.toLowerCase().startsWith(searchQuery.toLowerCase()) || 
+                              phoneStr.startsWith(searchQuery);
+        const matchesService = filterService === "all" || (client.serviceTypes && client.serviceTypes.includes(filterService));
+        
+        const hasAppointment = futureAppointmentClientNames.has(nameStr);
+        const matchesAppointment = filterAppointment === "all" || 
+                                   (filterAppointment === "yes" && hasAppointment) || 
+                                   (filterAppointment === "no" && !hasAppointment);
+        const matchesTime = filterTime === "all" || (client.preferredTimes && client.preferredTimes.includes(filterTime));
+        
+        return matchesSearch && matchesService && matchesAppointment && matchesTime;
+      })
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [clients, slots, searchQuery, filterService, filterAppointment, filterTime, business?.appointmentStatusDelay]);
   
   console.log("Clients:", clients);
   console.log("Filtered Clients:", filteredClients);
@@ -509,7 +514,8 @@ export function Clients() {
                 <th className="px-6 py-4 font-medium w-1/4">Kundenidentität</th>
                 <th className="px-6 py-4 font-medium hidden sm:table-cell w-1/5">Dienstleistungen</th>
                 <th className="px-6 py-4 font-medium hidden md:table-cell w-1/6">Bevorzugte Zeit</th>
-                <th className="px-6 py-4 font-medium w-1/6">Termin</th>
+                <th className="px-6 py-4 font-medium w-1/8">Status</th>
+                <th className="px-6 py-4 font-medium w-1/8">Termin</th>
                 <th className="px-6 py-4 font-medium text-right w-1/6">Aktion</th>
               </tr>
             </thead>
@@ -522,22 +528,37 @@ export function Clients() {
                 const nowString = format(effectiveNow, 'yyyy-MM-dd');
                 const nowTime = format(effectiveNow, 'HH:mm');
                 const clientAppointments = slots.filter(s => 
+                  s.status === 'booked' &&
                   s.bookedBy === client.name && 
                   (s.date > nowString || (s.date === nowString && s.time >= nowTime))
                 );
                 const hasAppointment = clientAppointments.length > 0;
+                
+                const notifiedSlots = slots.filter(s => 
+                  s.status === 'open' && 
+                  s.notifiedClients?.includes(client.id)
+                );
+                const isNotified = notifiedSlots.length > 0;
                 return (
                 <tr 
                   key={client.id} 
                   className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
                   onClick={() => {
                     setSelectedClientAppointments(clientAppointments);
+                    setSelectedClientNotifiedSlots(notifiedSlots);
                     setIsAppointmentModalOpen(true);
                   }}
                 >
                   <td className="px-6 py-4">
                     <div className="font-bold text-deep-blue dark:text-white text-base">{client.name}</div>
                     <div className="text-gray-500 dark:text-gray-400">{client.phone}</div>
+                    {isNotified && (
+                      <div className="sm:hidden mt-2">
+                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-accent/10 text-accent border border-accent/20">
+                          <Clock className="w-2.5 h-2.5 mr-1" /> Gemeldet
+                        </span>
+                      </div>
+                    )}
                     <div className="sm:hidden mt-2 flex flex-wrap gap-1">
                       {client.serviceTypes.slice(0, 2).map((s: string) => (
                         <span key={s} className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wider rounded">
@@ -565,6 +586,19 @@ export function Clients() {
                   <td className="px-6 py-4 hidden md:table-cell">
                     <div className="flex items-center text-gray-600 dark:text-gray-400 font-medium">
                       {client.preferredTimes.length > 0 ? client.preferredTimes.join(", ") : "Alle Zeiten"}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col gap-1">
+                      {isNotified ? (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-accent/10 text-accent border border-accent/20">
+                          <Clock className="w-2.5 h-2.5 mr-1" /> Gemeldet
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-100 dark:bg-slate-800 text-gray-500 border border-transparent">
+                          Inaktiv
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -752,12 +786,36 @@ export function Clients() {
         title="Termindetails"
         headerClassName="bg-indigo-500"
       >
-        <div className="space-y-4">
-          {selectedClientAppointments.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400">Dieser Kunde hat aktuell keine Termine.</p>
-          ) : (
+        <div className="space-y-6">
+          {selectedClientNotifiedSlots.length > 0 && (
             <div className="space-y-3">
-              {selectedClientAppointments.map((slot, index) => (
+              <h4 className="text-xs font-bold uppercase tracking-widest text-orange-600 dark:text-orange-400 flex items-center gap-2">
+                <Clock className="w-4 h-4" /> Gemeldete freie Termine
+              </h4>
+              <div className="space-y-2">
+                {selectedClientNotifiedSlots.map((slot, index) => (
+                  <div key={index} className="p-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/20 rounded-lg">
+                    <div className="font-bold text-orange-900 dark:text-orange-300 text-sm mb-1">{slot.serviceType}</div>
+                    <div className="flex gap-4 text-xs text-orange-800 dark:text-orange-400">
+                      <span>{format(new Date(slot.date), 'dd.MM.yyyy')}</span>
+                      <span>{slot.time} Uhr</span>
+                      {slot.employeeName && <span>{slot.employeeName}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+              <CheckCircle className="w-4 h-4" /> Gebuchte Termine
+            </h4>
+            {selectedClientAppointments.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-800/50 p-3 rounded-lg border border-dashed border-gray-200 dark:border-slate-700">Dieser Kunde hat aktuell keine festen Termine.</p>
+            ) : (
+              <div className="space-y-3">
+                {selectedClientAppointments.map((slot, index) => (
                 <div 
                   key={index} 
                   className="p-4 bg-gray-50 dark:bg-slate-800 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors group"
@@ -806,7 +864,8 @@ export function Clients() {
               ))}
             </div>
           )}
-          <div className="pt-4">
+        </div>
+        <div className="pt-4">
             <Button variant="outline" className="w-full dark:border-slate-700 dark:text-white" onClick={() => setIsAppointmentModalOpen(false)}>Schließen</Button>
           </div>
         </div>

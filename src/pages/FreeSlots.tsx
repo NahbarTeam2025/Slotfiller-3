@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { collection, query, onSnapshot, addDoc, where, getDocs, doc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
@@ -137,8 +137,9 @@ export function FreeSlots() {
 
       // Trigger SMS Notification via Cloudflare Worker
       try {
-        const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
+        const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev/", {
           method: "POST",
+          mode: "cors",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             businessId,
@@ -158,7 +159,7 @@ export function FreeSlots() {
         }
       } catch (workerErr) {
         console.error("Error calling worker", workerErr);
-        setWorkerError("Fehler beim Benachrichtigen der Kunden. Bitte prüfen Sie die Worker-Konfiguration.");
+        setWorkerError("Der Termin wurde gemeldet, aber die Benachrichtigungen konnten nicht gesendet werden (Netzwerkfehler).");
       }
 
       setIsModalOpen(false);
@@ -261,25 +262,25 @@ export function FreeSlots() {
     return rows;
   };
 
-  const selectedDateString = format(selectedDate, 'yyyy-MM-dd');
-  const todayString = format(new Date(), 'yyyy-MM-dd');
+  const selectedDateString = useMemo(() => format(selectedDate, 'yyyy-MM-dd'), [selectedDate]);
+  const todayString = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
   const isToday = selectedDateString === todayString;
   const isPastDay = selectedDateString < todayString;
 
-  const filteredSlots = slots.filter(slot => slot.date === selectedDateString);
+  const filteredSlots = useMemo(() => slots.filter(slot => slot.date === selectedDateString), [slots, selectedDateString]);
 
-  const availableEmployees = business?.employees?.filter((emp: any) => {
+  const availableEmployees = useMemo(() => business?.employees?.filter((emp: any) => {
     const isAbsent = business?.absences?.some((abs: any) => 
       abs.employeeId === emp.id && 
       abs.startDate <= selectedDateString && 
       abs.endDate >= selectedDateString
     );
     return !isAbsent;
-  }) || [];
+  }) || [], [business?.employees, business?.absences, selectedDateString]);
 
   const totalCapacity = business?.employees?.length > 0 ? availableEmployees.length : 1;
 
-  const generateTimeSlots = () => {
+  const generateTimeSlots = useCallback(() => {
     if (totalCapacity === 0) return [];
     
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -307,44 +308,50 @@ export function FreeSlots() {
       generatedSlots.pop();
     }
     return generatedSlots;
-  };
+  }, [selectedDate, totalCapacity, business?.openingHours, business?.openTime, business?.closeTime]);
 
-  let timeSlots = generateTimeSlots();
-
-  if (isPastDay) {
-    timeSlots = [];
-  } else if (isToday) {
-    const now = new Date();
-    const currentTimeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    timeSlots = timeSlots.filter(time => time >= currentTimeString);
-  }
-
-  // Filter out slots that are fully booked based on capacity
-  const availableTimeSlots = timeSlots.filter(time => {
-    const bookedCount = filteredSlots.filter(s => s.status === 'booked' && s.time === time).length;
-    return bookedCount < totalCapacity;
-  });
-
-  // Sort time slots
-  const sortedTimeSlots = [...availableTimeSlots].sort((a, b) => {
-    if (sortBy === 'capacity') {
-      const bookedA = filteredSlots.filter(s => s.status === 'booked' && s.time === a).length;
-      const bookedB = filteredSlots.filter(s => s.status === 'booked' && s.time === b).length;
-      const remainingA = totalCapacity - bookedA;
-      const remainingB = totalCapacity - bookedB;
-      
-      if (remainingA !== remainingB) {
-        return remainingB - remainingA; // More capacity first
-      }
+  const timeSlots = useMemo(() => {
+    let slots = generateTimeSlots();
+    if (isPastDay) {
+      return [];
+    } else if (isToday) {
+      const now = new Date();
+      const currentTimeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      slots = slots.filter(time => time >= currentTimeString);
     }
-    return a.localeCompare(b); // Default to time sort
-  });
+    return slots;
+  }, [generateTimeSlots, isPastDay, isToday]);
 
-  const freeSlotsCount = sortedTimeSlots.length;
+  const availableTimeSlots = useMemo(() => {
+    return timeSlots.filter(time => {
+      const bookedCount = filteredSlots.filter(s => s.status === 'booked' && s.time === time).length;
+      return bookedCount < totalCapacity;
+    });
+  }, [timeSlots, filteredSlots, totalCapacity]);
 
-  const hd = business?.federalState ? new Holidays('DE', business.federalState) : null;
-  const holiday = (hd ? hd.isHoliday(selectedDate) : null) as any;
-  const holidayName = holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
+  const sortedTimeSlots = useMemo(() => {
+    return [...availableTimeSlots].sort((a, b) => {
+      if (sortBy === 'capacity') {
+        const bookedA = filteredSlots.filter(s => s.status === 'booked' && s.time === a).length;
+        const bookedB = filteredSlots.filter(s => s.status === 'booked' && s.time === b).length;
+        const remainingA = totalCapacity - bookedA;
+        const remainingB = totalCapacity - bookedB;
+        
+        if (remainingA !== remainingB) {
+          return remainingB - remainingA;
+        }
+      }
+      return a.localeCompare(b);
+    });
+  }, [availableTimeSlots, sortBy, filteredSlots, totalCapacity]);
+
+  const freeSlotsCount = useMemo(() => sortedTimeSlots.length, [sortedTimeSlots]);
+
+  const holidayName = useMemo(() => {
+    const hd = business?.federalState ? new Holidays('DE', business.federalState) : null;
+    const holiday = (hd ? hd.isHoliday(selectedDate) : null) as any;
+    return holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
+  }, [business?.federalState, selectedDate]);
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -448,7 +455,7 @@ export function FreeSlots() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Heute ist ein gesetzlicher Feiertag.</p>
                   </div>
                 </div>
-              ) : sortedTimeSlots.map(time => {
+              ) : sortedTimeSlots.map((time, idx) => {
                 const openSlot = filteredSlots.find(s => s.status === 'open' && s.time === time);
                 const bookedCount = filteredSlots.filter(s => s.status === 'booked' && s.time === time).length;
                 const remainingCapacity = totalCapacity - bookedCount;
@@ -459,8 +466,8 @@ export function FreeSlots() {
 
                 if (openSlot) {
                   return (
-                    <div key={time} className="flex border-b border-gray-100 dark:border-slate-800 min-h-[70px]">
-                      <div className="w-24 py-4 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right bg-gray-50/50 dark:bg-slate-800/20">
+                    <div key={time} className={`flex border-b border-gray-100 dark:border-slate-800 min-h-[70px] ${idx % 2 === 1 ? 'bg-gray-50/30 dark:bg-slate-900/10' : ''}`}>
+                      <div className={`w-24 py-4 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right ${idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-slate-800/20' : 'bg-gray-100/50 dark:bg-slate-800/40'}`}>
                         {time}
                       </div>
                       <div className="flex-1 p-2">
@@ -488,8 +495,8 @@ export function FreeSlots() {
                 }
 
                 return (
-                  <div key={time} className="flex border-b border-gray-100 dark:border-slate-800 min-h-[70px] group">
-                    <div className="w-24 py-4 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right bg-gray-50/50 dark:bg-slate-800/20">
+                  <div key={time} className={`flex border-b border-gray-100 dark:border-slate-800 min-h-[70px] group ${idx % 2 === 1 ? 'bg-gray-50/30 dark:bg-slate-900/10' : ''}`}>
+                    <div className={`w-24 py-4 px-4 text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right ${idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-slate-800/20' : 'bg-gray-100/50 dark:bg-slate-800/40'}`}>
                       {time}
                     </div>
                     <div className="flex-1 p-2">

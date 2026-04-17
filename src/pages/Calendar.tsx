@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { collection, query, onSnapshot, addDoc, where, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { collection, query, onSnapshot, addDoc, where, getDocs, doc, deleteDoc, updateDoc, runTransaction } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
@@ -182,6 +182,15 @@ export function Calendar() {
   const [isSlotEmployeeDropdownOpen, setIsSlotEmployeeDropdownOpen] = useState(false);
   const [slotEmployeeSearch, setSlotEmployeeSearch] = useState("");
 
+  const dashboardEmployeeFocus = business?.dashboardEmployeeFocus || "all";
+  
+  const effectiveSlots = useMemo(() => 
+    dashboardEmployeeFocus === "all" 
+      ? slots 
+      : slots.filter(s => s.employeeId === dashboardEmployeeFocus),
+    [slots, dashboardEmployeeFocus]
+  );
+
   useEffect(() => {
     if (!businessId) return;
 
@@ -239,17 +248,37 @@ export function Calendar() {
         const now = new Date();
         const localNowString = `${format(now, 'yyyy-MM-dd')}T${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         
-        const futureBookedClients = slots
-          .filter(s => s.status === 'booked' && `${s.date}T${s.time}` >= localNowString)
-          .map(s => s.bookedBy);
+        const futureAppointments = slots.filter(s => s.status === 'booked' && `${s.date}T${s.time}` >= localNowString);
 
         const filteredClients = allActiveClients.filter((client: any) => {
+          // Requirement: Only clients with existing future appointments
+          const hasFutureAppointment = futureAppointments.some(s => s.bookedBy === client.name);
+          if (!hasFutureAppointment) return false;
+
           const matchesService = newSlotServices.length === 0 || 
             client.serviceTypes?.some((s: string) => newSlotServices.includes(s));
           return matchesService;
         });
 
-        setMatchingClients(filteredClients);
+        // Add priority info
+        const clientsWithPriority = filteredClients.map((client: any) => {
+          const clientAppts = futureAppointments.filter(s => s.bookedBy === client.name);
+          
+          let isPriority = false;
+          if (newSlotDate) {
+            const slotDate = new Date(newSlotDate);
+            isPriority = clientAppts.some(appt => {
+              const apptDate = new Date(appt.date);
+              const diffTime = Math.abs(apptDate.getTime() - slotDate.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              return diffDays <= 7;
+            });
+          }
+          
+          return { ...client, isPriority };
+        });
+
+        setMatchingClients(clientsWithPriority);
       });
     };
 
@@ -270,29 +299,93 @@ export function Calendar() {
     const employee = newSlotEmployee ? business?.employees?.find((e: any) => e.id === newSlotEmployee) : null;
 
     try {
-      if (isEditMode && editingSlotId) {
-        // Update existing slot
-        await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
-          date: newSlotDate,
-          time: newSlotTime,
-          serviceType: finalService,
-          employeeId: newSlotEmployee || null,
-          employeeName: employee?.name || "",
-          bookedBy: clientName,
-          updatedAt: new Date().toISOString()
-        });
-      } else if (isManualBooking && slotToManuallyBook) {
-        // Update existing slot
-        await updateDoc(doc(db, `businesses/${businessId}/slots`, slotToManuallyBook.id), {
-          status: "booked",
-          bookedBy: clientName,
-          bookedAt: new Date().toISOString()
-        });
+      await runTransaction(db, async (transaction) => {
+        // Double check server-side if this slot is still available for the specific employee
+        const slotsQuery = query(
+          collection(db, `businesses/${businessId}/slots`),
+          where("date", "==", newSlotDate),
+          where("time", "==", newSlotTime),
+          where("status", "==", "booked")
+        );
+        const snapshot = await getDocs(slotsQuery);
+        const bookedSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // Send SMS to notified clients
+        // Check if the specific employee already has a booking
+        if (newSlotEmployee) {
+          const employeeConflict = bookedSlots.find((s: any) => s.employeeId === newSlotEmployee && s.id !== editingSlotId);
+          if (employeeConflict) {
+            throw new Error("Dieser Mitarbeiter hat zu der gewählten Zeit bereits einen Termin.");
+          }
+        }
+
+        if (isEditMode && editingSlotId) {
+          transaction.update(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
+            date: newSlotDate,
+            time: newSlotTime,
+            serviceType: finalService,
+            employeeId: newSlotEmployee || null,
+            employeeName: employee?.name || "",
+            bookedBy: clientName,
+            updatedAt: new Date().toISOString()
+          });
+        } else if (isManualBooking && slotToManuallyBook) {
+          const slotRef = doc(db, `businesses/${businessId}/slots`, slotToManuallyBook.id);
+          const freshSlot = await transaction.get(slotRef);
+          if (freshSlot.exists() && freshSlot.data().status === 'booked') {
+            throw new Error("Dieser Termin wurde gerade von jemand anderem gebucht.");
+          }
+          transaction.update(slotRef, {
+            status: "booked",
+            bookedBy: clientName,
+            bookedAt: new Date().toISOString()
+          });
+        } else {
+          // Check for existing open slot to "consume"
+          const openSlotsQuery = query(
+            collection(db, `businesses/${businessId}/slots`),
+            where("date", "==", newSlotDate),
+            where("time", "==", newSlotTime),
+            where("status", "==", "open")
+          );
+          const openSnapshot = await getDocs(openSlotsQuery);
+          const existingOpenSlot = openSnapshot.docs.find(d => {
+            const data = d.data();
+            return !newSlotEmployee || data.employeeId === newSlotEmployee || !data.employeeId;
+          });
+
+          if (existingOpenSlot) {
+            transaction.update(existingOpenSlot.ref, {
+              status: "booked",
+              bookedBy: clientName,
+              bookedAt: new Date().toISOString(),
+              serviceType: finalService,
+              employeeId: newSlotEmployee || null,
+              employeeName: employee?.name || null
+            });
+          } else {
+            const newSlotRef = doc(collection(db, `businesses/${businessId}/slots`));
+            transaction.set(newSlotRef, {
+              date: newSlotDate,
+              time: newSlotTime,
+              serviceType: finalService,
+              employeeId: newSlotEmployee || null,
+              employeeName: employee?.name || "",
+              status: "booked",
+              notifiedClients: [],
+              bookedBy: clientName,
+              bookedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+      });
+
+      if (isManualBooking && slotToManuallyBook) {
+        // Send SMS to notified clients after transaction
         try {
-          await fetch("https://slotfiller-sms.nahbar.workers.dev", {
+          await fetch("https://slotfiller-sms.nahbar.workers.dev/", {
             method: "POST",
+            mode: "cors",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               businessId,
@@ -302,22 +395,8 @@ export function Calendar() {
           });
         } catch (workerErr) {
           console.error("Error calling SMS worker", workerErr);
-          setWorkerError("Fehler beim Senden der SMS. Bitte prüfen Sie die Worker-Konfiguration.");
+          setWorkerError("Fehler beim Senden der SMS (Netzwerkfehler).");
         }
-      } else {
-        // Create new booked slot
-        await addDoc(collection(db, `businesses/${businessId}/slots`), {
-          date: newSlotDate,
-          time: newSlotTime,
-          serviceType: finalService,
-          employeeId: newSlotEmployee || null,
-          employeeName: employee?.name || "",
-          status: "booked",
-          notifiedClients: [],
-          bookedBy: clientName,
-          bookedAt: new Date().toISOString(),
-          createdAt: new Date().toISOString()
-        });
       }
 
       // Delete old future appointments for this client (only if not editing)
@@ -344,8 +423,9 @@ export function Calendar() {
       setIsCustomService(false);
       setCustomService("");
       setCustomServices([]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving booked slot", error);
+      setWorkerError(error.message || "Fehler beim Speichern des Termins.");
     } finally {
       setIsSubmitting(false);
     }
@@ -356,7 +436,19 @@ export function Calendar() {
     setIsEditMode(true);
     setNewSlotDate(slot.date);
     setNewSlotTime(slot.time);
-    setNewSlotServices(slot.serviceType ? slot.serviceType.split(", ") : []);
+    
+    const allServices = slot.serviceType ? slot.serviceType.split(", ") : [];
+    const employee = business?.employees?.find((e: any) => e.id === slot.employeeId);
+    const availableServices = employee?.serviceTypes || business?.serviceTypes || [];
+    
+    const standard = allServices.filter((s: string) => availableServices.includes(s));
+    const custom = allServices.filter((s: string) => !availableServices.includes(s));
+    
+    setNewSlotServices(standard);
+    setCustomServices(custom);
+    setIsCustomService(custom.length > 0);
+    setCustomService("");
+    
     setNewSlotEmployee(slot.employeeId || "");
     setClientName(slot.bookedBy);
     setIsModalOpen(true);
@@ -409,50 +501,78 @@ export function Calendar() {
     }
 
     try {
-      const docRef = await addDoc(collection(db, `businesses/${businessId}/slots`), {
-        date: newSlotDate,
-        time: newSlotTime,
-        serviceType: serviceTypeString,
-        employeeId: newSlotEmployee || null,
-        employeeName: employee?.name || "",
-        status: "open",
-        notifiedClients: selectedClients,
-        bookedBy: null,
-        bookedAt: null,
-        createdAt: new Date().toISOString()
+      await runTransaction(db, async (transaction) => {
+        // Double check server-side if this employee already has a slot at this time
+        const slotsQuery = query(
+          collection(db, `businesses/${businessId}/slots`),
+          where("date", "==", newSlotDate),
+          where("time", "==", newSlotTime)
+        );
+        const snapshot = await getDocs(slotsQuery);
+        const existingSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        if (newSlotEmployee) {
+          const employeeConflict = existingSlots.find((s: any) => s.employeeId === newSlotEmployee);
+          if (employeeConflict) {
+            throw new Error("Dieser Mitarbeiter hat zu der gewählten Zeit bereits einen Eintrag (Termin oder freien Platz).");
+          }
+        }
+
+        const newSlotRef = doc(collection(db, `businesses/${businessId}/slots`));
+        const newSlotId = newSlotRef.id;
+        transaction.set(newSlotRef, {
+          date: newSlotDate,
+          time: newSlotTime,
+          serviceType: serviceTypeString,
+          employeeId: newSlotEmployee || null,
+          employeeName: employee?.name || "",
+          status: "open",
+          notifiedClients: selectedClients,
+          bookedBy: null,
+          bookedAt: null,
+          createdAt: new Date().toISOString()
+        });
+
+        // Use the generated ID for notifications after transaction
+        // We will store it in a variable accessible outside
+        (window as any).__lastCreatedSlotId = newSlotId;
       });
 
-      // Trigger SMS Notification via Cloudflare Worker
-      try {
-        const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            businessId,
-            slotId: docRef.id,
-            date: newSlotDate,
-            time: newSlotTime,
-            serviceType: serviceTypeString,
-            manualClients: selectedClients
-          })
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          setNotificationResult(result);
-          setTimeout(() => setNotificationResult(null), 5000);
+      const lastSlotId = (window as any).__lastCreatedSlotId;
+      if (lastSlotId) {
+        try {
+          const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev/", {
+            method: "POST",
+            mode: "cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              businessId,
+              slotId: lastSlotId,
+              date: newSlotDate,
+              time: newSlotTime,
+              serviceType: serviceTypeString,
+              manualClients: selectedClients
+            })
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            setNotificationResult(result);
+            setTimeout(() => setNotificationResult(null), 5000);
+          }
+        } catch (workerErr) {
+          console.error("Error calling worker", workerErr);
+          setWorkerError("Der Termin wurde erstellt, aber die Benachrichtigung konnte nicht gesendet werden (Netzwerkfehler).");
         }
-      } catch (workerErr) {
-        console.error("Error calling worker", workerErr);
-        setWorkerError("Fehler beim Benachrichtigen der Kunden. Bitte prüfen Sie die Worker-Konfiguration.");
       }
 
       setIsFreeSlotModalOpen(false);
       setIsCustomFreeService(false);
       setCustomFreeService("");
       setCustomFreeServices([]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating free slot", error);
+      setWorkerError(error.message || "Fehler beim Erstellen des freien Termins.");
     } finally {
       setIsSubmitting(false);
     }
@@ -480,8 +600,9 @@ export function Calendar() {
     }
 
     try {
-      const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
+      const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev/", {
         method: "POST",
+        mode: "cors",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           businessId,
@@ -580,7 +701,7 @@ export function Calendar() {
         formattedDate = format(day, "d");
         const cloneDay = day;
         const dateString = format(cloneDay, 'yyyy-MM-dd');
-        const hasSlots = slots.some(s => s.date === dateString);
+        const hasSlots = effectiveSlots.some(s => s.date === dateString);
         const holiday = (hd ? hd.isHoliday(cloneDay) : null) as any;
 
         days.push(
@@ -610,23 +731,35 @@ export function Calendar() {
     return rows;
   };
 
-  const selectedDateString = format(selectedDate, 'yyyy-MM-dd');
-  const filteredSlots = slots.filter(slot => slot.date === selectedDateString);
-  const bookedSlots = filteredSlots.filter(s => s.status === 'booked');
-  const openSlots = filteredSlots.filter(s => s.status === 'open');
+  const selectedDateString = useMemo(() => format(selectedDate, 'yyyy-MM-dd'), [selectedDate]);
+  
+  const filteredSlots = useMemo(() => effectiveSlots.filter(slot => slot.date === selectedDateString), [effectiveSlots, selectedDateString]);
+  
+  const slotsGroupedByTime = useMemo(() => {
+    const grouped: Record<string, any[]> = {};
+    filteredSlots.forEach(slot => {
+      if (!grouped[slot.time]) grouped[slot.time] = [];
+      grouped[slot.time].push(slot);
+    });
+    return grouped;
+  }, [filteredSlots]);
 
-  const availableEmployees = business?.employees?.filter((emp: any) => {
+  const bookedSlots = useMemo(() => filteredSlots.filter(s => s.status === 'booked'), [filteredSlots]);
+  const openSlots = useMemo(() => filteredSlots.filter(s => s.status === 'open'), [filteredSlots]);
+
+  const availableEmployees = useMemo(() => business?.employees?.filter((emp: any) => {
+    if (dashboardEmployeeFocus !== "all" && emp.id !== dashboardEmployeeFocus) return false;
     const isAbsent = business?.absences?.some((abs: any) => 
       abs.employeeId === emp.id && 
       abs.startDate <= selectedDateString && 
       abs.endDate >= selectedDateString
     );
     return !isAbsent;
-  }) || [];
+  }) || [], [business?.employees, business?.absences, dashboardEmployeeFocus, selectedDateString]);
 
   const totalCapacity = business?.employees?.length > 0 ? availableEmployees.length : 1;
 
-  const generateTimeSlots = () => {
+  const generateTimeSlots = useCallback(() => {
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const dayName = days[selectedDate.getDay()];
     const hours = business?.openingHours?.[dayName] || { open: business?.openTime || "08:00", close: business?.closeTime || "18:00", closed: false };
@@ -654,9 +787,9 @@ export function Calendar() {
       generatedSlots.pop();
     }
     return generatedSlots;
-  };
+  }, [selectedDate, business?.openingHours, business?.openTime, business?.closeTime, business?.slotInterval]);
 
-  const getCapacityForTime = (time: string, date: string) => {
+  const getCapacityForTime = useCallback((time: string, date: string) => {
     const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date(date).getDay()];
     let capacity = 0;
     
@@ -673,19 +806,28 @@ export function Calendar() {
     });
     
     return capacity > 0 ? capacity : (business?.employees?.length > 0 ? 0 : 1);
-  };
+  }, [availableEmployees, business?.openingHours, business?.employees]);
 
-  const timeSlots = generateTimeSlots();
+  const timeSlots = useMemo(() => generateTimeSlots(), [generateTimeSlots]);
 
-  const hd = business?.federalState ? new Holidays('DE', business.federalState) : null;
-  const holiday = (hd ? hd.isHoliday(selectedDate) : null) as any;
-  const holidayName = holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
+  const holidayName = useMemo(() => {
+    const hd = business?.federalState ? new Holidays('DE', business.federalState) : null;
+    const holiday = (hd ? hd.isHoliday(selectedDate) : null) as any;
+    return holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
+  }, [business?.federalState, selectedDate]);
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto overflow-x-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-8">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Kalender</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white flex items-center gap-3">
+            Kalender
+            {dashboardEmployeeFocus !== "all" && (
+              <span className="text-sm font-medium px-3 py-1 bg-accent/10 text-accent rounded-full align-middle whitespace-nowrap">
+                Fokus: {business?.employees?.find((e: any) => e.id === dashboardEmployeeFocus)?.name}
+              </span>
+            )}
+          </h1>
         </div>
         
         {workerError && (
@@ -770,16 +912,16 @@ export function Calendar() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Heute ist ein gesetzlicher Feiertag.</p>
                   </div>
                 </div>
-              ) : timeSlots.map(time => {
-                const timeSlotsData = filteredSlots.filter(s => s.time === time);
+              ) : timeSlots.map((time, idx) => {
+                const timeSlotsData = slotsGroupedByTime[time] || [];
                 const bookedCount = timeSlotsData.filter(s => s.status === 'booked').length;
                 const capacity = getCapacityForTime(time, selectedDateString);
                 const remainingCapacity = capacity - bookedCount;
                 const hasOpenSlot = timeSlotsData.some(s => s.status === 'open');
                 
                 return (
-                  <div key={time} className="flex border-b border-gray-100 dark:border-slate-800 min-h-[70px]">
-                    <div className="w-16 sm:w-24 py-4 px-2 sm:px-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right bg-gray-50/50 dark:bg-slate-800/20 flex flex-col justify-center">
+                  <div key={time} className={`flex border-b border-gray-100 dark:border-slate-800 min-h-[70px] ${idx % 2 === 1 ? 'bg-gray-50/30 dark:bg-slate-900/10' : ''}`}>
+                    <div className={`w-16 sm:w-24 py-4 px-2 sm:px-4 text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 border-r border-gray-100 dark:border-slate-800 text-right ${idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-slate-800/20' : 'bg-gray-100/50 dark:bg-slate-800/40'} flex flex-col justify-center`}>
                       <div className="font-bold">{time}</div>
                       <div className={`text-[10px] mt-1 font-bold ${remainingCapacity > 0 ? 'text-accent' : 'text-red-500'}`}>
                         {remainingCapacity}/{capacity}
@@ -1285,17 +1427,38 @@ export function Calendar() {
               className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
             />
             <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">Passende Kunden ({matchingClients.length})</label>
-              <button 
-                onClick={() => setSelectedClients(selectedClients.length === matchingClients.length ? [] : matchingClients.map(c => c.id))}
-                className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
-              >
-                {selectedClients.length === matchingClients.length ? 'Alle abwählen' : 'Alle auswählen'}
-              </button>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">
+                Passende Kunden ({matchingClients.length})
+                <span className="ml-2 text-[10px] text-accent lowercase font-normal italic">
+                  (Nur Kunden mit Terminen)
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    const priorityIds = matchingClients.filter(c => c.isPriority).map(c => c.id);
+                    setSelectedClients(prev => {
+                      const allSelected = priorityIds.every(id => prev.includes(id));
+                      if (allSelected) return prev.filter(id => !priorityIds.includes(id));
+                      return Array.from(new Set([...prev, ...priorityIds]));
+                    });
+                  }}
+                  className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
+                >
+                  Priorisierte wählen
+                </button>
+                <button 
+                  onClick={() => setSelectedClients(selectedClients.length === matchingClients.length ? [] : matchingClients.map(c => c.id))}
+                  className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline border-l border-gray-200 pl-2"
+                >
+                  {selectedClients.length === matchingClients.length ? 'Alle abwählen' : 'Alle auswählen'}
+                </button>
+              </div>
             </div>
             <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
               {matchingClients
                 .filter(c => c.name.toLowerCase().startsWith(clientSearch.toLowerCase()))
+                .sort((a, b) => b.isPriority - a.isPriority)
                 .map(client => (
                 <div 
                   key={client.id}
@@ -1306,7 +1469,12 @@ export function Calendar() {
                     {selectedClients.includes(client.id) && <div className="w-1.5 h-1.5 bg-deep-blue rounded-full" />}
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
+                      {client.isPriority && (
+                        <span className="text-[8px] bg-accent/20 text-accent px-1 rounded font-bold uppercase tracking-tight">Priorität</span>
+                      )}
+                    </div>
                     <div className="text-[10px] text-gray-500 dark:text-gray-400">{client.phone}</div>
                   </div>
                 </div>
@@ -1452,61 +1620,97 @@ export function Calendar() {
               onChange={(e) => setClientSearch(e.target.value)}
               className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
             />
-            <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">
-                Verfügbare Kunden ({allClients
-                  .filter(c => !(selectedOpenSlot?.notifiedClients || []).includes(c.id))
-                  .filter(c => {
-                    if (!additionalServiceType) return true;
-                    const selectedServices = additionalServiceType.split(', ').filter(Boolean);
-                    if (selectedServices.length === 0) return true;
-                    return selectedServices.some(s => c.serviceTypes?.includes(s));
-                  }).length})
-              </label>
-              <button 
-                onClick={() => {
-                  const available = allClients
-                    .filter(c => !(selectedOpenSlot?.notifiedClients || []).includes(c.id))
-                    .filter(c => {
-                      if (!additionalServiceType) return true;
-                      const selectedServices = additionalServiceType.split(', ').filter(Boolean);
-                      if (selectedServices.length === 0) return true;
-                      return selectedServices.some(s => c.serviceTypes?.includes(s));
-                    });
-                  setAdditionalClients(additionalClients.length === available.length ? [] : available.map(c => c.id));
-                }}
-                className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
-              >
-                {additionalClients.length > 0 ? 'Alle abwählen' : 'Alle auswählen'}
-              </button>
-            </div>
-            <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
-              {allClients
-                .filter(c => !(selectedOpenSlot?.notifiedClients || []).includes(c.id))
-                .filter(c => {
-                  if (!additionalServiceType) return true;
-                  const selectedServices = additionalServiceType.split(', ').filter(Boolean);
-                  if (selectedServices.length === 0) return true;
-                  return selectedServices.some(s => c.serviceTypes?.includes(s));
-                })
-                .filter(c => c.name.toLowerCase().startsWith(clientSearch.toLowerCase()))
-                .map(client => (
-                <div 
-                  key={client.id}
-                  onClick={() => setAdditionalClients(prev => prev.includes(client.id) ? prev.filter(id => id !== client.id) : [...prev, client.id])}
-                  className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${additionalClients.includes(client.id) ? 'bg-accent/5' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${additionalClients.includes(client.id) ? 'bg-accent border-accent' : 'border-gray-300 dark:border-slate-700'}`}>
-                    {additionalClients.includes(client.id) && <div className="w-1.5 h-1.5 bg-deep-blue rounded-full" />}
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400">{client.phone}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                {(() => {
+                  const now = new Date();
+                  const localNowString = `${format(now, 'yyyy-MM-dd')}T${format(now, 'HH:mm')}`;
+                  const futureAppointments = (slots || []).filter(s => s.status === 'booked' && `${s.date}T${s.time}` >= localNowString);
+                  const selectedServices = additionalServiceType ? additionalServiceType.split(', ').filter(Boolean) : [];
+                  
+                  const available = (allClients || []).filter(c => {
+                    const hasFutureAppointment = futureAppointments.some(s => s.bookedBy === c.name);
+                    return hasFutureAppointment &&
+                      !(selectedOpenSlot?.notifiedClients || []).includes(c.id) &&
+                      (selectedServices.length === 0 || selectedServices.some(s => c.serviceTypes?.includes(s)));
+                  });
+
+                  const withPriority = available.map(c => {
+                    const clientAppts = futureAppointments.filter(s => s.bookedBy === c.name);
+                    let isPriority = false;
+                    if (selectedOpenSlot?.date) {
+                      const slotDate = new Date(selectedOpenSlot.date);
+                      isPriority = clientAppts.some(appt => {
+                        const apptDate = new Date(appt.date);
+                        const diffTime = Math.abs(apptDate.getTime() - slotDate.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        return diffDays <= 7;
+                      });
+                    }
+                    return { ...c, isPriority };
+                  });
+
+                  const filtered = withPriority
+                    .filter(c => c.name.toLowerCase().startsWith(clientSearch.toLowerCase()))
+                    .sort((a, b) => (b.isPriority ? 1 : 0) - (a.isPriority ? 1 : 0));
+
+                  return (
+                    <>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">
+                          Verfügbare Kunden ({available.length})
+                          <span className="ml-2 text-[10px] text-accent lowercase font-normal italic">
+                            (Nur Kunden mit Terminen)
+                          </span>
+                        </label>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              const priorityIds = withPriority.filter(c => c.isPriority).map(c => c.id);
+                              setAdditionalClients(prev => {
+                                const allSelected = priorityIds.every(id => prev.includes(id));
+                                if (allSelected) return prev.filter(id => !priorityIds.includes(id));
+                                return Array.from(new Set([...prev, ...priorityIds]));
+                              });
+                            }}
+                            className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
+                          >
+                            Priorisierte wählen
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setAdditionalClients(additionalClients.length === available.length ? [] : available.map(c => c.id));
+                            }}
+                            className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline border-l border-gray-200 dark:border-slate-700 pl-2"
+                          >
+                            {additionalClients.length === available.length ? 'Alle abwählen' : 'Alle auswählen'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
+                        {filtered.map(client => (
+                          <div 
+                            key={client.id}
+                            onClick={() => setAdditionalClients(prev => prev.includes(client.id) ? prev.filter(id => id !== client.id) : [...prev, client.id])}
+                            className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${additionalClients.includes(client.id) ? 'bg-accent/5' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}
+                          >
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${additionalClients.includes(client.id) ? 'bg-accent border-accent' : 'border-gray-300 dark:border-slate-700'}`}>
+                              {additionalClients.includes(client.id) && <div className="w-1.5 h-1.5 bg-deep-blue rounded-full" />}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
+                                {client.isPriority && (
+                                  <span className="text-[8px] bg-accent/20 text-accent px-1 rounded font-bold uppercase tracking-tight">Priorität</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400">{client.phone}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
             <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsNotifyMoreModalOpen(false)}>Abbrechen</Button>

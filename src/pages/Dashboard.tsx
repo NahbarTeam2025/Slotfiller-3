@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { collection, query, orderBy, limit, onSnapshot, addDoc, where, getDocs, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { collection, query, orderBy, limit, onSnapshot, addDoc, where, getDocs, doc, deleteDoc, updateDoc, runTransaction } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
@@ -201,15 +201,40 @@ export function Dashboard() {
         const allActiveClients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
         const now = new Date();
+        const localNowString = `${format(now, 'yyyy-MM-dd')}T${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
         
+        const futureAppointments = slots.filter(s => s.status === 'booked' && `${s.date}T${s.time}` >= localNowString);
+
         const filteredClients = allActiveClients.filter((client: any) => {
+          // Requirement: Only clients with existing future appointments
+          const hasFutureAppointment = futureAppointments.some(s => s.bookedBy === client.name);
+          if (!hasFutureAppointment) return false;
+
           const matchesService = newSlotServices.length === 0 || 
             !client.serviceTypes || client.serviceTypes.length === 0 ||
             client.serviceTypes?.some((s: string) => newSlotServices.includes(s));
           return matchesService;
         });
 
-        setMatchingClients(filteredClients);
+        // Add priority info
+        const clientsWithPriority = filteredClients.map((client: any) => {
+          const clientAppts = futureAppointments.filter(s => s.bookedBy === client.name);
+          
+          let isPriority = false;
+          if (newSlotDate) {
+            const slotDate = new Date(newSlotDate);
+            isPriority = clientAppts.some(appt => {
+              const apptDate = new Date(appt.date);
+              const diffTime = Math.abs(apptDate.getTime() - slotDate.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              return diffDays <= 7;
+            });
+          }
+          
+          return { ...client, isPriority };
+        });
+
+        setMatchingClients(clientsWithPriority);
       });
     };
 
@@ -279,8 +304,11 @@ export function Dashboard() {
           // 1. Try to notify worker about expiry (optional/best-effort)
           // We wrap this in its own try-catch so a network error doesn't block the DB reset
           try {
-            await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
+            // Use a simple POST with text/plain to avoid CORS preflight if the worker is sensitive
+            // or ensure trailing slash is present
+            await fetch("https://slotfiller-notifier.nahbar.workers.dev/", {
               method: "POST",
+              mode: "cors",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 businessId,
@@ -293,7 +321,6 @@ export function Dashboard() {
               })
             });
           } catch (fetchErr) {
-            // Log as warning, but don't throw - we still want to reset the slot
             console.warn("Could not notify worker about expired slot (likely CORS or network):", fetchErr);
           }
 
@@ -364,41 +391,70 @@ export function Dashboard() {
     }
 
     try {
-      const docRef = await addDoc(collection(db, `businesses/${businessId}/slots`), {
-        date: newSlotDate,
-        time: newSlotTime,
-        serviceType: serviceTypeString,
-        employeeId: newSlotEmployee || null,
-        employeeName: employee?.name || "",
-        status: "open",
-        notifiedClients: selectedClients,
-        bookedBy: null,
-        bookedAt: null,
-        createdAt: new Date().toISOString()
+      await runTransaction(db, async (transaction) => {
+        // Double check server-side if this employee already has a slot at this time
+        const slotsQuery = query(
+          collection(db, `businesses/${businessId}/slots`),
+          where("date", "==", newSlotDate),
+          where("time", "==", newSlotTime)
+        );
+        const snapshot = await getDocs(slotsQuery);
+        const existingSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        if (newSlotEmployee) {
+          const employeeConflict = existingSlots.find((s: any) => s.employeeId === newSlotEmployee);
+          if (employeeConflict) {
+            throw new Error("Dieser Mitarbeiter hat zu der gewählten Zeit bereits einen Eintrag (Termin oder freien Platz).");
+          }
+        }
+
+        const newSlotRef = doc(collection(db, `businesses/${businessId}/slots`));
+        const newSlotId = newSlotRef.id;
+        transaction.set(newSlotRef, {
+          date: newSlotDate,
+          time: newSlotTime,
+          serviceType: serviceTypeString,
+          employeeId: newSlotEmployee || null,
+          employeeName: employee?.name || "",
+          status: "open",
+          notifiedClients: selectedClients,
+          bookedBy: null,
+          bookedAt: null,
+          createdAt: new Date().toISOString()
+        });
+        (window as any).__lastCreatedSlotId = newSlotId;
       });
 
-      try {
-        const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            businessId,
-            slotId: docRef.id,
-            date: newSlotDate,
-            time: newSlotTime,
-            serviceType: serviceTypeString,
-            manualClients: selectedClients
-          })
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          setNotificationResult(result);
-          setTimeout(() => setNotificationResult(null), 5000);
+      const lastSlotId = (window as any).__lastCreatedSlotId;
+      if (lastSlotId) {
+        try {
+          const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev/", {
+            method: "POST",
+            mode: "cors",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              businessId,
+              slotId: lastSlotId,
+              date: newSlotDate,
+              time: newSlotTime,
+              serviceType: serviceTypeString,
+              manualClients: selectedClients
+            })
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            setNotificationResult(result);
+            setTimeout(() => setNotificationResult(null), 5000);
+          } else {
+            console.warn("Worker response not ok:", response.status);
+          }
+        } catch (workerErr) {
+          console.error("Error calling worker", workerErr);
+          // If it's a "Failed to fetch", it's usually CORS or network.
+          // We show a more helpful message.
+          setWorkerError("Der Termin wurde erstellt, aber die automatische Benachrichtigung konnte nicht ausgelöst werden (Netzwerkfehler).");
         }
-      } catch (workerErr) {
-        console.error("Error calling worker", workerErr);
-        setWorkerError("Fehler beim Benachrichtigen der Kunden. Bitte prüfen Sie die Worker-Konfiguration.");
       }
 
       setIsCreateFreeSlotModalOpen(false);
@@ -406,8 +462,9 @@ export function Dashboard() {
       setIsCustomFreeService(false);
       setCustomFreeService("");
       setCustomFreeServices([]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating free slot", error);
+      setWorkerError(error.message || "Fehler beim Erstellen des freien Termins.");
     } finally {
       setIsSubmitting(false);
     }
@@ -427,49 +484,83 @@ export function Dashboard() {
     setIsSubmitting(true);
 
     try {
-      if (isEditMode && editingSlotId) {
-        // Update existing slot
-        await updateDoc(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
-          date: newSlotDate,
-          time: newSlotTime,
-          serviceType: finalServices,
-          employeeId: newSlotEmployee || null,
-          employeeName: employee?.name || "",
-          bookedBy: clientName,
-          updatedAt: new Date().toISOString()
-        });
-      } else {
-        // Check if there is an existing open slot at this time
-        const existingOpenSlot = slotsToday.find(s => s.date === newSlotDate && s.time === newSlotTime && s.status === 'open');
+      await runTransaction(db, async (transaction) => {
+        // Double check server-side if this slot is still available for the specific employee
+        const slotsQuery = query(
+          collection(db, `businesses/${businessId}/slots`),
+          where("date", "==", newSlotDate),
+          where("time", "==", newSlotTime),
+          where("status", "==", "booked")
+        );
+        const snapshot = await getDocs(slotsQuery);
+        const bookedSlots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        if (existingOpenSlot) {
-          // Update existing open slot to booked
-          await updateDoc(doc(db, `businesses/${businessId}/slots`, existingOpenSlot.id), {
-            status: "booked",
-            bookedBy: clientName,
-            bookedAt: new Date().toISOString(),
-            serviceType: finalServices,
-            employeeId: newSlotEmployee || null,
-            employeeName: employee?.name || null
-          });
-        } else {
-          // Create new booked slot
-          await addDoc(collection(db, `businesses/${businessId}/slots`), {
+        // Check if the specific employee already has a booking
+        if (newSlotEmployee) {
+          const employeeConflict = bookedSlots.find((s: any) => s.employeeId === newSlotEmployee && s.id !== editingSlotId);
+          if (employeeConflict) {
+            throw new Error("Dieser Mitarbeiter hat zu der gewählten Zeit bereits einen Termin.");
+          }
+        }
+
+        // Check overall capacity if no employee is selected (or just skip if business rules allow multiple bookings)
+        const capacity = getCapacityForTime(newSlotTime, newSlotDate);
+        if (bookedSlots.length >= capacity && !editingSlotId) {
+          throw new Error("Zu dieser Zeit ist die maximale Kapazität bereits erreicht.");
+        }
+
+        if (isEditMode && editingSlotId) {
+          transaction.update(doc(db, `businesses/${businessId}/slots`, editingSlotId), {
             date: newSlotDate,
             time: newSlotTime,
             serviceType: finalServices,
             employeeId: newSlotEmployee || null,
             employeeName: employee?.name || "",
-            status: "booked",
-            notifiedClients: [],
             bookedBy: clientName,
-            bookedAt: new Date().toISOString(),
-            createdAt: new Date().toISOString()
+            updatedAt: new Date().toISOString()
           });
-        }
-      }
+        } else {
+          // Check for existing open slot to "consume"
+          const openSlotsQuery = query(
+            collection(db, `businesses/${businessId}/slots`),
+            where("date", "==", newSlotDate),
+            where("time", "==", newSlotTime),
+            where("status", "==", "open")
+          );
+          const openSnapshot = await getDocs(openSlotsQuery);
+          const existingOpenSlot = openSnapshot.docs.find(d => {
+            const data = d.data();
+            return !newSlotEmployee || data.employeeId === newSlotEmployee || !data.employeeId;
+          });
 
-      // Delete old future appointments for this client (only if not editing or if date/time changed)
+          if (existingOpenSlot) {
+            transaction.update(existingOpenSlot.ref, {
+              status: "booked",
+              bookedBy: clientName,
+              bookedAt: new Date().toISOString(),
+              serviceType: finalServices,
+              employeeId: newSlotEmployee || null,
+              employeeName: employee?.name || null
+            });
+          } else {
+            const newSlotRef = doc(collection(db, `businesses/${businessId}/slots`));
+            transaction.set(newSlotRef, {
+              date: newSlotDate,
+              time: newSlotTime,
+              serviceType: finalServices,
+              employeeId: newSlotEmployee || null,
+              employeeName: employee?.name || "",
+              status: "booked",
+              notifiedClients: [],
+              bookedBy: clientName,
+              bookedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString()
+            });
+          }
+        }
+      });
+
+      // Rest of the logic (deleting future appointments etc.) stays the same but after transaction
       if (!isEditMode) {
         const nowString = format(new Date(), 'yyyy-MM-dd');
         const existingAppointments = slotsToday.filter(s => 
@@ -503,7 +594,19 @@ export function Dashboard() {
     setIsEditMode(true);
     setNewSlotDate(slot.date);
     setNewSlotTime(slot.time);
-    setNewSlotServices(slot.serviceType ? slot.serviceType.split(", ") : []);
+    
+    const allServices = slot.serviceType ? slot.serviceType.split(", ") : [];
+    const employee = business?.employees?.find((e: any) => e.id === slot.employeeId);
+    const availableServices = employee?.serviceTypes || business?.serviceTypes || [];
+    
+    const standard = allServices.filter((s: string) => availableServices.includes(s));
+    const custom = allServices.filter((s: string) => !availableServices.includes(s));
+    
+    setNewSlotServices(standard);
+    setCustomServices(custom);
+    setIsCustomService(custom.length > 0);
+    setCustomService("");
+    
     setNewSlotEmployee(slot.employeeId || "");
     setClientName(slot.bookedBy);
     setIsModalOpen(true);
@@ -531,8 +634,9 @@ export function Dashboard() {
     }
 
     try {
-      const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev", {
+      const response = await fetch("https://slotfiller-notifier.nahbar.workers.dev/", {
         method: "POST",
+        mode: "cors",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           businessId,
@@ -589,22 +693,43 @@ export function Dashboard() {
     }
   };
 
-  const todayString = format(new Date(), 'yyyy-MM-dd');
-  const slotsToday = slots.filter(s => s.date === todayString);
-  const bookedSlotsToday = slotsToday.filter(s => s.status === 'booked');
+  const dashboardEmployeeFocus = business?.dashboardEmployeeFocus || "all";
   
-  const availableEmployees = business?.employees?.filter((emp: any) => {
+  const todayString = useMemo(() => format(new Date(), 'yyyy-MM-dd'), []);
+  
+  const effectiveSlots = useMemo(() => 
+    dashboardEmployeeFocus === "all" 
+      ? slots 
+      : slots.filter(s => s.employeeId === dashboardEmployeeFocus),
+    [slots, dashboardEmployeeFocus]
+  );
+
+  const slotsToday = useMemo(() => effectiveSlots.filter(s => s.date === todayString), [effectiveSlots, todayString]);
+  const bookedSlotsToday = useMemo(() => slotsToday.filter(s => s.status === 'booked'), [slotsToday]);
+  
+  // Group slots by time for faster lookups in the timeline
+  const slotsGroupedByTime = useMemo(() => {
+    const grouped: Record<string, any[]> = {};
+    slotsToday.forEach(slot => {
+      if (!grouped[slot.time]) grouped[slot.time] = [];
+      grouped[slot.time].push(slot);
+    });
+    return grouped;
+  }, [slotsToday]);
+
+  const availableEmployees = useMemo(() => business?.employees?.filter((emp: any) => {
+    if (dashboardEmployeeFocus !== "all" && emp.id !== dashboardEmployeeFocus) return false;
     const isAbsent = business?.absences?.some((abs: any) => 
       abs.employeeId === emp.id && 
       abs.startDate <= todayString && 
       abs.endDate >= todayString
     );
     return !isAbsent;
-  }) || [];
+  }) || [], [business?.employees, business?.absences, dashboardEmployeeFocus, todayString]);
 
   const totalCapacity = business?.employees?.length > 0 ? availableEmployees.length : 1;
 
-  const generateTimeSlots = () => {
+  const generateTimeSlots = useCallback(() => {
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const dayName = days[new Date().getDay()];
     const hours = business?.openingHours?.[dayName] || { open: business?.openTime || "08:00", close: business?.closeTime || "18:00", closed: false };
@@ -632,9 +757,9 @@ export function Dashboard() {
       generatedSlots.pop();
     }
     return generatedSlots;
-  };
+  }, [business?.openingHours, business?.openTime, business?.closeTime, business?.slotInterval]);
 
-  const getCapacityForTime = (time: string, date: string) => {
+  const getCapacityForTime = useCallback((time: string, date: string) => {
     const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date(date).getDay()];
     let capacity = 0;
     
@@ -651,74 +776,104 @@ export function Dashboard() {
     });
     
     return capacity > 0 ? capacity : (business?.employees?.length > 0 ? 0 : 1);
-  };
+  }, [availableEmployees, business?.openingHours, business?.employees]);
 
-  const timeSlots = generateTimeSlots();
+  const timeSlots = useMemo(() => generateTimeSlots(), [generateTimeSlots]);
   
   const now = new Date();
-  const currentTimeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-  const currentHourString = `${now.getHours().toString().padStart(2, '0')}:00`;
-  const localNowString = `${todayString}T${currentTimeString}`;
-  
-  const futureTimeSlots = timeSlots.filter(time => time >= currentTimeString);
-  const futureBookedSlotsToday = bookedSlotsToday.filter(s => s.time >= currentTimeString);
-  
-  let openSlotsCount = 0;
-  futureTimeSlots.forEach(time => {
-    const bookedCount = futureBookedSlotsToday.filter(s => s.time === time).length;
-    const capacity = getCapacityForTime(time, todayString);
-    if (bookedCount < capacity) {
-      openSlotsCount += 1;
-    }
-  });
+  const currentTimeString = useMemo(() => {
+    const n = new Date();
+    return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
+  }, []);
 
-  const timelineSlots = timeSlots.filter(time => time >= currentHourString);
-  
-  const hd = business?.federalState ? new Holidays('DE', business.federalState) : null;
-  const holiday = (hd ? hd.isHoliday(new Date()) : null) as any;
-  const holidayName = holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
+  const currentHourString = useMemo(() => {
+    const n = new Date();
+    return `${n.getHours().toString().padStart(2, '0')}:00`;
+  }, []);
 
-  const notifiedClients = slots
-    .filter(s => s.status === 'open' && s.notifiedClients?.length > 0)
-    .flatMap(s => s.notifiedClients.map((clientId: string) => {
-      const client = clients.find(c => c.id === clientId);
-      return { 
-        clientName: client ? client.name : clientId, 
-        slot: s 
-      };
-    }));
+  const futureTimeSlots = useMemo(() => timeSlots.filter(time => time >= currentTimeString), [timeSlots, currentTimeString]);
+  const futureBookedSlotsToday = useMemo(() => bookedSlotsToday.filter(s => s.time >= currentTimeString), [bookedSlotsToday, currentTimeString]);
   
-  const uniqueNotifiedClients = Array.from(new Set(notifiedClients.map(n => n.clientName)));
+  const openSlotsCount = useMemo(() => {
+    let count = 0;
+    futureTimeSlots.forEach(time => {
+      const bookedCount = futureBookedSlotsToday.filter(s => s.time === time).length;
+      const capacity = getCapacityForTime(time, todayString);
+      if (bookedCount < capacity) {
+        count += (capacity - bookedCount);
+      }
+    });
+    return count;
+  }, [futureTimeSlots, futureBookedSlotsToday, getCapacityForTime, todayString]);
 
-  const openNotifiedClientsModalForSlot = (slot: any) => {
+  const timelineSlots = useMemo(() => timeSlots.filter(time => time >= currentHourString), [timeSlots, currentHourString]);
+  
+  const holidayName = useMemo(() => {
+    const hd = business?.federalState ? new Holidays('DE', business.federalState) : null;
+    const holiday = (hd ? hd.isHoliday(new Date()) : null) as any;
+    return holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
+  }, [business?.federalState]);
+
+  const reportedSlots = useMemo(() => effectiveSlots.filter(s => s.status === 'open' && s.notifiedClients?.length > 0), [effectiveSlots]);
+
+  const filteredReportedSlots = useMemo(() => {
+    return reportedSlots.filter(s => {
+      const matchesEmployee = !notifiedFilterEmployee || s.employeeName?.toLowerCase().includes(notifiedFilterEmployee.toLowerCase());
+      const matchesClient = !notifiedFilterClient || s.notifiedClients?.some((clientId: string) => {
+        const client = clients.find(c => c.id === clientId);
+        return client?.name.toLowerCase().includes(notifiedFilterClient.toLowerCase());
+      });
+      const matchesDate = !notifiedFilterDate || s.date === notifiedFilterDate;
+      return matchesEmployee && matchesClient && matchesDate;
+    }).sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.time.localeCompare(b.time);
+    });
+  }, [reportedSlots, notifiedFilterEmployee, notifiedFilterClient, notifiedFilterDate, clients]);
+
+  const totalReportedSlotsCount = useMemo(() => reportedSlots.length, [reportedSlots]);
+
+  const openNotifiedClientsModalForSlot = useCallback((slot: any) => {
     setSelectedOpenSlot(slot);
-    setNotifiedClientsDetails(slot.notifiedClients?.map((clientId: string) => {
-      const client = clients.find(c => c.id === clientId);
-      return { 
-        clientName: client ? client.name : clientId, 
-        phone: client ? client.phone : "",
-        slot: slot 
-      };
-    }) || []);
-    setNotifiedFilterEmployee("");
+    setNotifiedFilterDate(slot.date);
+    setNotifiedFilterEmployee(slot.employeeName || "");
     setNotifiedFilterClient("");
-    setNotifiedFilterDate("");
     setIsNotifiedClientsModalOpen(true);
-  };
-
-  const filteredNotifiedClients = notifiedClientsDetails.filter(item => {
-    const matchesEmployee = !notifiedFilterEmployee || item.slot.employeeName?.toLowerCase().startsWith(notifiedFilterEmployee.toLowerCase());
-    const matchesClient = !notifiedFilterClient || item.clientName.toLowerCase().startsWith(notifiedFilterClient.toLowerCase());
-    const matchesDate = !notifiedFilterDate || item.slot.date === notifiedFilterDate;
-    return matchesEmployee && matchesClient && matchesDate;
-  });
+  }, []);
 
   return (
     <div className="p-4 sm:p-8 max-w-7xl mx-auto lg:h-full lg:flex lg:flex-col lg:overflow-hidden overflow-x-hidden">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 mb-6 shrink-0">
         <div>
-          <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Übersicht</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white flex items-center gap-3">
+            Übersicht
+            {dashboardEmployeeFocus !== "all" && (
+              <span className="text-sm font-medium px-3 py-1 bg-accent/10 text-accent rounded-full align-middle whitespace-nowrap">
+                Fokus: {business?.employees?.find((e: any) => e.id === dashboardEmployeeFocus)?.name}
+              </span>
+            )}
+          </h1>
         </div>
+        
+        {workerError && (
+          <div className="flex-1 max-w-md bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 rounded-lg p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <AlertTriangle className="h-5 w-5 text-red-500" />
+            <div className="text-sm font-medium text-red-800 dark:text-red-300">
+              {workerError}
+            </div>
+            <button onClick={() => setWorkerError(null)} className="ml-auto text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-200">
+              <Plus className="h-4 w-4 rotate-45" />
+            </button>
+          </div>
+        )}
+        {notificationResult && (
+          <div className="flex-1 max-w-md bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-800/30 rounded-lg p-3 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+            <CheckCircle className="h-5 w-5 text-green-500" />
+            <div className="text-sm font-medium text-green-800 dark:text-green-300">
+              Erfolg! <span className="font-bold">{notificationResult.notified}</span> Kunden wurden benachrichtigt.
+            </div>
+          </div>
+        )}
         <Button 
           onClick={() => {
             setNewSlotServices([]);
@@ -755,13 +910,15 @@ export function Dashboard() {
           />
         </div>
         <div className="cursor-pointer transition-transform hover:scale-[1.02] h-full" onClick={() => {
-          setNotifiedClientsDetails(notifiedClients);
+          setNotifiedFilterEmployee("");
+          setNotifiedFilterClient("");
+          setNotifiedFilterDate("");
           setIsNotifiedClientsModalOpen(true);
         }}>
           <StatCard 
-            title="Benachrichtigte Kunden" 
-            value={notifiedClients.length.toString().padStart(2, '0')} 
-            icon={<Users className="h-5 w-5 text-orange-500" />}
+            title="Gemeldete Termine" 
+            value={totalReportedSlotsCount.toString().padStart(2, '0')} 
+            icon={<Clock className="h-5 w-5 text-orange-500" />}
             className="bg-orange-50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/20 h-full"
             valueClassName="text-orange-900 dark:text-orange-300 leading-none"
           />
@@ -784,16 +941,16 @@ export function Dashboard() {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Heute ist ein gesetzlicher Feiertag.</p>
               </div>
             </div>
-          ) : timelineSlots.map(time => {
-            const timeSlotsData = slotsToday.filter(s => s.time === time);
+          ) : timelineSlots.map((time, idx) => {
+            const timeSlotsData = slotsGroupedByTime[time] || [];
             const bookedSlots = timeSlotsData.filter(s => s.status === 'booked');
             const openSlots = timeSlotsData.filter(s => s.status === 'open');
             const capacity = getCapacityForTime(time, todayString);
             const remainingCapacity = capacity - bookedSlots.length;
             
             return (
-              <div key={time} className="flex border-b border-gray-100 dark:border-slate-800 min-h-[60px]">
-                <div className="w-20 py-3 px-4 flex flex-col items-end border-r border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/20">
+              <div key={time} className={`flex border-b border-gray-100 dark:border-slate-800 min-h-[60px] ${idx % 2 === 1 ? 'bg-gray-50/30 dark:bg-slate-900/10' : ''}`}>
+                <div className={`w-20 py-3 px-4 flex flex-col items-end border-r border-gray-100 dark:border-slate-800 ${idx % 2 === 0 ? 'bg-gray-50/50 dark:bg-slate-800/20' : 'bg-gray-100/50 dark:bg-slate-800/40'}`}>
                   <span className="text-xs font-bold text-gray-400 dark:text-gray-500">{time}</span>
                   <span className={`text-[10px] font-bold mt-1 ${remainingCapacity > 0 ? 'text-accent' : 'text-red-500'}`}>
                     {remainingCapacity}/{capacity}
@@ -1126,42 +1283,98 @@ export function Dashboard() {
       <Modal 
         isOpen={isNotifiedClientsModalOpen} 
         onClose={() => setIsNotifiedClientsModalOpen(false)} 
-        title="Benachrichtigte Kunden"
+        title="Gemeldete Termine"
         headerClassName="bg-orange-500"
       >
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <Input 
-              placeholder="Mitarbeiter..." 
-              value={notifiedFilterEmployee}
-              onChange={(e) => setNotifiedFilterEmployee(e.target.value)}
-              className="h-9 text-sm"
-            />
-            <Input 
-              placeholder="Kunde..." 
-              value={notifiedFilterClient}
-              onChange={(e) => setNotifiedFilterClient(e.target.value)}
-              className="h-9 text-sm"
-            />
-            <Input 
-              type="date"
-              value={notifiedFilterDate}
-              onChange={(e) => setNotifiedFilterDate(e.target.value)}
-              className="h-9 text-sm"
-            />
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <Users className="h-4 w-4" />
+              </span>
+              <Input 
+                placeholder="Mitarbeiter..." 
+                value={notifiedFilterEmployee}
+                onChange={(e) => setNotifiedFilterEmployee(e.target.value)}
+                className="h-10 text-sm pl-9 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            </div>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <Users className="h-4 w-4" />
+              </span>
+              <Input 
+                placeholder="Kunde..." 
+                value={notifiedFilterClient}
+                onChange={(e) => setNotifiedFilterClient(e.target.value)}
+                className="h-10 text-sm pl-9 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            </div>
+            <div>
+              <Input 
+                type="date"
+                value={notifiedFilterDate}
+                onChange={(e) => setNotifiedFilterDate(e.target.value)}
+                className="h-10 text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+              />
+            </div>
           </div>
-          <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-            {filteredNotifiedClients.length === 0 ? (
-              <p className="text-sm text-gray-500">Keine Kunden gefunden.</p>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin">
+            {filteredReportedSlots.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">
+                <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                  <Clock className="h-6 w-6 text-gray-400" />
+                </div>
+                <p className="font-bold text-gray-900 dark:text-white mb-1">Keine gemeldeten Termine</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Passe deine Filter an oder melde neue freie Slots.</p>
+              </div>
             ) : (
-              filteredNotifiedClients.map((item, index) => (
-                <div key={index} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-bold text-deep-blue">{item.clientName}</p>
-                    <p className="text-xs text-gray-500">
-                      {item.slot.serviceType} am {format(new Date(item.slot.date), 'dd.MM.yyyy')} um {item.slot.time}
-                      {item.slot.employeeName && ` bei ${item.slot.employeeName}`}
-                    </p>
+              filteredReportedSlots.map((slot) => (
+                <div key={slot.id} className="group relative bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl p-4 shadow-sm hover:shadow-md hover:border-orange-200 dark:hover:border-orange-900/50 transition-all">
+                  <div className="flex justify-between items-start gap-3">
+                    <div className="flex gap-3 items-start">
+                      <div className="h-10 w-10 shrink-0 rounded-lg bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center text-orange-600 dark:text-orange-400">
+                        <Clock className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-deep-blue dark:text-white leading-tight mb-0.5">
+                          {slot.serviceType}
+                        </h4>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span className="flex items-center">
+                            <CalendarIcon className="h-3 w-3 mr-1" />
+                            {format(new Date(slot.date), 'dd.MM.yyyy')}
+                          </span>
+                          <span className="flex items-center">
+                            <Clock className="h-3 w-3 mr-1" />
+                            {slot.time} Uhr
+                          </span>
+                          {slot.employeeName && (
+                            <span className="flex items-center">
+                              <Users className="h-3 w-3 mr-1" />
+                              {slot.employeeName}
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="mt-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1.5 flex items-center">
+                            <Users className="h-3 w-3 mr-1" />
+                            Benachrichtigte Kunden ({slot.notifiedClients?.length || 0})
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {slot.notifiedClients?.map((clientId: string) => {
+                              const client = clients.find(c => c.id === clientId);
+                              return (
+                                <span key={clientId} className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-50 dark:bg-slate-900/50 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-600">
+                                  {client ? client.name : clientId}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))
@@ -1270,66 +1483,99 @@ export function Dashboard() {
               onChange={(e) => setClientSearch(e.target.value)}
               className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
             />
-            <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">
-                Verfügbare Kunden ({clients.filter(c => {
+                {(() => {
+                  const now = new Date();
+                  const localNowString = `${format(now, 'yyyy-MM-dd')}T${format(now, 'HH:mm')}`;
+                  const futureAppointments = slots.filter(s => s.status === 'booked' && `${s.date}T${s.time}` >= localNowString);
                   const selectedServices = additionalServiceType ? additionalServiceType.split(', ').filter(Boolean) : [];
-                  return c.active !== false && 
-                  !(selectedOpenSlot?.notifiedClients || []).includes(c.id) &&
-                  (selectedServices.length === 0 || selectedServices.some(s => c.serviceTypes?.includes(s)));
-                }).length})
-              </label>
-              <button 
-                onClick={() => {
+                  
                   const available = clients.filter(c => {
-                    const selectedServices = additionalServiceType ? additionalServiceType.split(', ').filter(Boolean) : [];
+                    const hasFutureAppointment = futureAppointments.some(s => s.bookedBy === c.name);
                     return c.active !== false && 
-                    !(selectedOpenSlot?.notifiedClients || []).includes(c.id) &&
-                    (selectedServices.length === 0 || selectedServices.some(s => c.serviceTypes?.includes(s))) &&
-                    (c.name.toLowerCase().startsWith(clientSearch.toLowerCase()) || 
-                     c.phone?.toLowerCase().startsWith(clientSearch.toLowerCase()));
+                      hasFutureAppointment &&
+                      !(selectedOpenSlot?.notifiedClients || []).includes(c.id) &&
+                      (selectedServices.length === 0 || selectedServices.some(s => c.serviceTypes?.includes(s)));
                   });
-                  setAdditionalClients(additionalClients.length === available.length ? [] : available.map(c => c.id));
-                }}
-                className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
-              >
-                {additionalClients.length > 0 ? 'Alle abwählen' : 'Alle auswählen'}
-              </button>
-            </div>
-            <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
-              {clients
-                .filter(c => {
-                  const selectedServices = additionalServiceType ? additionalServiceType.split(', ').filter(Boolean) : [];
-                  return c.active !== false && 
-                  !(selectedOpenSlot?.notifiedClients || []).includes(c.id) &&
-                  (selectedServices.length === 0 || selectedServices.some(s => c.serviceTypes?.includes(s)));
-                })
-                .filter(c => 
-                  c.name.toLowerCase().startsWith(clientSearch.toLowerCase()) || 
-                  c.phone?.toLowerCase().startsWith(clientSearch.toLowerCase())
-                )
-                .map(client => (
-                <div 
-                  key={client.id}
-                  onClick={() => setAdditionalClients(prev => prev.includes(client.id) ? prev.filter(id => id !== client.id) : [...prev, client.id])}
-                  className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${additionalClients.includes(client.id) ? 'bg-accent/5' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}
-                >
-                  <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${additionalClients.includes(client.id) ? 'bg-accent border-accent' : 'border-gray-300 dark:border-slate-700'}`}>
-                    {additionalClients.includes(client.id) && <div className="w-1.5 h-1.5 bg-deep-blue rounded-full" />}
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
-                    <div className="text-[10px] text-gray-500 dark:text-gray-400">{client.phone}</div>
-                  </div>
-                  <div className="flex gap-1">
-                    {client.serviceTypes?.slice(0, 1).map((s: string) => (
-                      <span key={s} className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-800 text-[8px] font-bold uppercase rounded">{s}</span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+
+                  const withPriority = available.map(c => {
+                    const clientAppts = futureAppointments.filter(s => s.bookedBy === c.name);
+                    let isPriority = false;
+                    if (selectedOpenSlot?.date) {
+                      const slotDate = new Date(selectedOpenSlot.date);
+                      isPriority = clientAppts.some(appt => {
+                        const apptDate = new Date(appt.date);
+                        const diffTime = Math.abs(apptDate.getTime() - slotDate.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        return diffDays <= 7;
+                      });
+                    }
+                    return { ...c, isPriority };
+                  });
+
+                  const filtered = withPriority
+                    .filter(c => c.name.toLowerCase().startsWith(clientSearch.toLowerCase()) || 
+                                c.phone?.toLowerCase().startsWith(clientSearch.toLowerCase()))
+                    .sort((a, b) => (b.isPriority ? 1 : 0) - (a.isPriority ? 1 : 0));
+
+                  return (
+                    <>
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">
+                          Verfügbare Kunden ({available.length})
+                          <span className="ml-2 text-[10px] text-accent lowercase font-normal italic">
+                            (Nur Kunden mit Terminen)
+                          </span>
+                        </label>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => {
+                              const priorityIds = withPriority.filter(c => c.isPriority).map(c => c.id);
+                              setAdditionalClients(prev => {
+                                const allSelected = priorityIds.every(id => prev.includes(id));
+                                if (allSelected) return prev.filter(id => !priorityIds.includes(id));
+                                return Array.from(new Set([...prev, ...priorityIds]));
+                              });
+                            }}
+                            className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
+                          >
+                            Priorisierte wählen
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setAdditionalClients(additionalClients.length === available.length ? [] : available.map(c => c.id));
+                            }}
+                            className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline border-l border-gray-200 dark:border-slate-700 pl-2"
+                          >
+                            {additionalClients.length === available.length ? 'Alle abwählen' : 'Alle auswählen'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
+                        {filtered.map(client => (
+                          <div 
+                            key={client.id}
+                            onClick={() => setAdditionalClients(prev => prev.includes(client.id) ? prev.filter(id => id !== client.id) : [...prev, client.id])}
+                            className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${additionalClients.includes(client.id) ? 'bg-accent/5' : 'hover:bg-gray-50 dark:hover:bg-slate-800/50'}`}
+                          >
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${additionalClients.includes(client.id) ? 'bg-accent border-accent' : 'border-gray-300 dark:border-slate-700'}`}>
+                              {additionalClients.includes(client.id) && <div className="w-1.5 h-1.5 bg-deep-blue rounded-full" />}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
+                                {client.isPriority && (
+                                  <span className="text-[8px] bg-accent/20 text-accent px-1 rounded font-bold uppercase tracking-tight">Priorität</span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400">{client.phone}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
 
           <div className="pt-4 flex flex-col sm:flex-row gap-3">
             <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsNotifyMoreModalOpen(false)}>Abbrechen</Button>
@@ -1572,17 +1818,38 @@ export function Dashboard() {
               className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
             />
             <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Passende Kunden ({matchingClients.length})</label>
-              <button 
-                onClick={() => setSelectedClients(selectedClients.length === matchingClients.length ? [] : matchingClients.map(c => c.id))}
-                className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
-              >
-                {selectedClients.length === matchingClients.length ? 'Alle abwählen' : 'Alle auswählen'}
-              </button>
+              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">
+                Passende Kunden ({matchingClients.length})
+                <span className="ml-2 text-[10px] text-accent lowercase font-normal italic">
+                  (Nur Kunden mit Terminen)
+                </span>
+              </label>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    const priorityIds = matchingClients.filter(c => c.isPriority).map(c => c.id);
+                    setSelectedClients(prev => {
+                      const allSelected = priorityIds.every(id => prev.includes(id));
+                      if (allSelected) return prev.filter(id => !priorityIds.includes(id));
+                      return Array.from(new Set([...prev, ...priorityIds]));
+                    });
+                  }}
+                  className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline"
+                >
+                  Priorisierte wählen
+                </button>
+                <button 
+                  onClick={() => setSelectedClients(selectedClients.length === matchingClients.length ? [] : matchingClients.map(c => c.id))}
+                  className="text-[10px] font-bold text-accent uppercase tracking-widest hover:underline border-l border-gray-200 dark:border-slate-700 pl-2"
+                >
+                  {selectedClients.length === matchingClients.length ? 'Alle abwählen' : 'Alle auswählen'}
+                </button>
+              </div>
             </div>
             <div className="max-h-48 overflow-y-auto border border-gray-100 dark:border-slate-800 rounded-lg divide-y divide-gray-100 dark:divide-slate-800">
               {matchingClients
                 .filter(c => c.name.toLowerCase().startsWith(clientSearch.toLowerCase()))
+                .sort((a, b) => b.isPriority - a.isPriority)
                 .map(client => (
                 <div 
                   key={client.id}
@@ -1593,7 +1860,12 @@ export function Dashboard() {
                     {selectedClients.includes(client.id) && <div className="w-1.5 h-1.5 bg-deep-blue rounded-full" />}
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-bold text-deep-blue dark:text-white">{client.name}</div>
+                      {client.isPriority && (
+                        <span className="text-[8px] bg-accent/20 text-accent px-1 rounded font-bold uppercase tracking-tight">Priorität</span>
+                      )}
+                    </div>
                     <div className="text-[10px] text-gray-500 dark:text-gray-400">{client.phone}</div>
                   </div>
                 </div>

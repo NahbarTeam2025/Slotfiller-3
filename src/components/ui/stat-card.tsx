@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, memo } from "react";
 import { cn } from "../../lib/utils";
 
 interface StatCardProps {
@@ -10,7 +10,7 @@ interface StatCardProps {
   valueClassName?: string;
 }
 
-export function StatCard({ title, value, subtitle, icon, className, valueClassName }: StatCardProps) {
+export const StatCard = memo(function StatCard({ title, value, subtitle, icon, className, valueClassName }: StatCardProps) {
   return (
     <div className={cn("rounded-xl bg-white dark:bg-card-dark p-4 sm:p-6 shadow-floating border border-gray-100 dark:border-slate-800", className)}>
       <div className="flex items-center justify-between mb-4">
@@ -21,4 +21,4 @@ export function StatCard({ title, value, subtitle, icon, className, valueClassNa
       {subtitle && <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">{subtitle}</div>}
     </div>
   );
-}
+});

@@ -202,6 +202,7 @@ export function Settings() {
 
   const [federalState, setFederalState] = useState("");
   const [appointmentStatusDelay, setAppointmentStatusDelay] = useState("0");
+  const [dashboardEmployeeFocus, setDashboardEmployeeFocus] = useState("all");
 
   const [isInitialized, setIsInitialized] = useState(false);
   const [twilioPasswordInput, setTwilioPasswordInput] = useState("");
@@ -279,6 +280,7 @@ export function Settings() {
           setNotificationExpiryMinutes(data.notificationExpiryMinutes || "60");
           setFederalState(data.federalState || "");
           setAppointmentStatusDelay(data.appointmentStatusDelay || "0");
+          setDashboardEmployeeFocus(data.dashboardEmployeeFocus || "all");
           setIsInitialized(true);
         } else {
           // Keep services in sync since they can be added/removed directly
@@ -761,6 +763,25 @@ export function Settings() {
             >
               <Plus className="h-4 w-4 mr-2" /> Mitarbeiter anlegen
             </Button>
+          </div>
+
+          {/* Abwesenheiten (Urlaub, Krankheit, Feiertage) */}
+          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Dashboard & Kalender Filter</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie einen Mitarbeiter aus, dessen Termine standardmäßig auf dem Dashboard und im Kalender angezeigt werden sollen.</p>
+            <select 
+              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+              value={dashboardEmployeeFocus}
+              onChange={(e) => {
+                setDashboardEmployeeFocus(e.target.value);
+                updateBusiness({ dashboardEmployeeFocus: e.target.value });
+              }}
+            >
+              <option value="all">Alle Mitarbeiter anzeigen</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
           </div>
 
           {/* Abwesenheiten (Urlaub, Krankheit, Feiertage) */}
