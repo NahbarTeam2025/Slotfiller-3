@@ -9,7 +9,7 @@ import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
-import { Calendar, CheckCircle, Users, Plus, MoreVertical, Edit2, Trash2, AlertTriangle, Calendar as CalendarIcon, Clock, ChevronDown, X } from "lucide-react";
+import { Calendar, CheckCircle, Users, Plus, MoreVertical, Edit2, Trash2, AlertTriangle, Calendar as CalendarIcon, Clock, ChevronDown, X, XCircle } from "lucide-react";
 import Holidays from "date-holidays";
 
 export function Dashboard() {
@@ -56,6 +56,10 @@ export function Dashboard() {
   const [editingCustomValue, setEditingCustomValue] = useState("");
 
   const [confirmDeleteCustomIndex, setConfirmDeleteCustomIndex] = useState<{type: 'booked' | 'free' | 'notify', index: number} | null>(null);
+
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [slotToCancel, setSlotToCancel] = useState<any>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
 
   const renderCustomServicesList = (type: 'booked' | 'free' | 'notify') => {
     const list = type === 'booked' ? customServices : type === 'free' ? customFreeServices : customNotifyServices;
@@ -682,6 +686,66 @@ export function Dashboard() {
     setIsDeleteModalOpen(true);
   };
 
+  const confirmCancel = (slot: any) => {
+    setSlotToCancel(slot);
+    setIsCancelModalOpen(true);
+  };
+
+  const handleCancelAppointment = async () => {
+    if (!businessId || !slotToCancel) return;
+    setIsCancelling(true);
+    setWorkerError(null);
+
+    try {
+      const client = clients.find(c => c.name === slotToCancel.bookedBy);
+      const phone = client?.phone;
+
+      // Update slot back to open status
+      await updateDoc(doc(db, `businesses/${businessId}/slots`, slotToCancel.id), {
+        status: "open",
+        bookedBy: null,
+        bookedAt: null,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Notify customer if phone exists
+      if (phone) {
+        const message = `Hallo ${slotToCancel.bookedBy}, dein Termin am ${format(new Date(slotToCancel.date), 'dd.MM.')} um ${slotToCancel.time} Uhr wurde leider abgesagt. Wir melden uns für einen neuen Termin.`;
+        
+        try {
+          const response = await fetch("https://slotfiller-sms.nahbar.workers.dev/", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              to: phone,
+              message: message,
+              businessName: business?.name || "SlotFiller"
+            }),
+            mode: 'cors'
+          });
+
+          if (!response.ok) {
+            console.error("SMS worker failed");
+            setWorkerError("Termin wurde abgesagt, aber der Kunde konnte nicht per SMS benachrichtigt werden.");
+          }
+        } catch (smsErr) {
+          console.error("Error calling SMS worker", smsErr);
+          setWorkerError("Termin wurde abgesagt, aber der Kunde konnte nicht per SMS benachrichtigt werden.");
+        }
+      }
+
+      setIsCancelModalOpen(false);
+      setSlotToCancel(null);
+    } catch (error) {
+      console.error("Error cancelling appointment", error);
+      setWorkerError("Ein Fehler ist beim Absagen des Termins aufgetreten.");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   const handleDeleteSlot = async () => {
     if (!businessId || !slotToDelete) return;
     try {
@@ -981,6 +1045,16 @@ export function Dashboard() {
                             title="Termin bearbeiten"
                           >
                             <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmCancel(slot);
+                            }}
+                            className="text-gray-400 hover:text-orange-500 p-1"
+                            title="Termin absagen"
+                          >
+                            <XCircle className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={(e) => {
@@ -1991,6 +2065,38 @@ export function Dashboard() {
                 <p className="text-sm font-medium text-gray-400 dark:text-gray-500">Keine Termine für die gewählten Filter gefunden.</p>
               </div>
             )}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isCancelModalOpen} onClose={() => setIsCancelModalOpen(false)} title="Termin absagen">
+        <div className="space-y-6">
+          <div className="bg-orange-50 dark:bg-orange-900/10 text-orange-900 dark:text-orange-300 p-4 rounded-lg flex items-start gap-3 border border-orange-100 dark:border-orange-900/20">
+            <XCircle className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold mb-1">Möchtest du diesen Termin absagen?</p>
+              <p className="text-sm opacity-90">
+                Der Termin für <span className="font-bold">{slotToCancel?.bookedBy}</span> am {slotToCancel?.date ? format(new Date(slotToCancel.date), 'dd.MM.yyyy') : ''} um {slotToCancel?.time} Uhr wird abgesagt.
+              </p>
+            </div>
+          </div>
+          {workerError && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg text-xs text-red-600 dark:text-red-400">
+              {workerError}
+            </div>
+          )}
+          <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-slate-800/50 p-3 rounded-lg">
+            Der Kunde wird automatisch per SMS benachrichtigt, sofern eine Telefonnummer hinterlegt ist.
+          </p>
+          <div className="pt-4 flex flex-col sm:flex-row gap-3">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsCancelModalOpen(false)} disabled={isCancelling}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-orange-500 text-white hover:bg-orange-600 font-bold" 
+              onClick={handleCancelAppointment}
+              disabled={isCancelling}
+            >
+              {isCancelling ? "Wird abgesagt..." : "Termin absagen & Kunden informieren"}
+            </Button>
           </div>
         </div>
       </Modal>
