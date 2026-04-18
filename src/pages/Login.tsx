@@ -21,14 +21,14 @@ export function Login() {
   if (loading) return null;
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 dark:bg-black p-4 sm:p-0">
-      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-card-dark p-6 sm:p-10 shadow-xl text-center border border-gray-100 dark:border-slate-800">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50 dark:bg-black p-4 sm:p-0">
+      <div className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 p-6 sm:p-10 shadow-xl text-center border border-gray-100 dark:border-slate-800">
         <h1 className="text-4xl font-bold text-deep-blue dark:text-white tracking-tight mb-2">SlotFiller</h1>
-        <p className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-10">Kein Termin bleibt leer.</p>
+        <p className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-widest mb-10">Kein Termin bleibt leer.</p>
         
         <div className="bg-gray-50 dark:bg-slate-800/50 p-6 sm:p-8 rounded-xl border border-gray-100 dark:border-slate-800 mb-8">
           <h2 className="text-lg font-medium text-deep-blue dark:text-white mb-2">Willkommen</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Verwalte deine freien Zeitfenster.</p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">Verwalte deine freien Zeitfenster.</p>
           <Button onClick={signInWithGoogle} className="w-full bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover" size="lg">
             <svg className="mr-2 h-5 w-5" viewBox="0 0 24 24">
               <path
@@ -52,8 +52,8 @@ export function Login() {
           </Button>
         </div>
         
-        <p className="text-xs text-gray-400 dark:text-gray-500">© 2026 SLOTFILLER SYSTEMS</p>
+        <p className="text-xs text-gray-600 dark:text-gray-500 font-medium">© 2026 SLOTFILLER SYSTEMS</p>
       </div>
-    </div>
+    </main>
   );
 }

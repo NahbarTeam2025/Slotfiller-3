@@ -395,7 +395,7 @@ export function FreeSlots() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Calendar View */}
         <div className="lg:col-span-1">
-          <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-lg font-bold text-deep-blue dark:text-white">{monthName} {year}</h2>
               <div className="flex gap-2">
@@ -418,7 +418,7 @@ export function FreeSlots() {
 
         {/* Slots List */}
         <div className="lg:col-span-2">
-          <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-800/50">
               <h3 className="text-lg font-bold text-deep-blue dark:text-white">
                 Freie Plätze am {format(selectedDate, 'dd.MM.yyyy')}
@@ -501,7 +501,7 @@ export function FreeSlots() {
                     </div>
                     <div className="flex-1 p-2">
                       <div 
-                        className="h-full w-full flex items-center justify-between px-4 bg-white dark:bg-card-dark hover:bg-accent/5 cursor-pointer rounded-lg transition-colors border border-dashed border-gray-200 dark:border-slate-700 hover:border-accent"
+                        className="h-full w-full flex items-center justify-between px-4 bg-white dark:bg-slate-900 hover:bg-accent/5 cursor-pointer rounded-lg transition-colors border border-dashed border-gray-200 dark:border-slate-700 hover:border-accent"
                         onClick={() => {
                           setNewSlotTime(time);
                           handleOpenModal();

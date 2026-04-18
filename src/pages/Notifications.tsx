@@ -85,7 +85,7 @@ export function Notifications() {
         {loading ? (
           <div className="text-center py-12 text-gray-500">Laden...</div>
         ) : notifications.length === 0 ? (
-          <div className="bg-white dark:bg-card-dark rounded-xl border border-dashed border-gray-200 dark:border-slate-800 p-12 text-center">
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-dashed border-gray-200 dark:border-slate-800 p-12 text-center">
             <Bell className="h-12 w-12 text-gray-300 dark:text-gray-700 mx-auto mb-4" />
             <h3 className="text-lg font-bold text-deep-blue dark:text-white mb-1">Keine Benachrichtigungen</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">Sobald Kunden auf SMS antworten, erscheinen sie hier.</p>
@@ -94,7 +94,7 @@ export function Notifications() {
           notifications.map((notif) => (
             <div 
               key={notif.id}
-              className={`relative bg-white dark:bg-card-dark rounded-xl border transition-all p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center ${
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border transition-all p-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center ${
                 notif.read 
                   ? "border-gray-100 dark:border-slate-800 opacity-75" 
                   : "border-accent/30 shadow-md shadow-accent/5 ring-1 ring-accent/10"

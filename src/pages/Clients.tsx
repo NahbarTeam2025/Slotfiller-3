@@ -452,7 +452,7 @@ export function Clients() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input 
               placeholder="Kunde suchen..." 
-              className="pl-10 bg-white dark:bg-card-dark dark:border-slate-800 dark:text-white"
+              className="pl-10 bg-white dark:bg-slate-900 dark:border-slate-800 dark:text-white"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -460,13 +460,13 @@ export function Clients() {
           <div className="relative">
             <button
               onClick={() => setIsSlotServiceDropdownOpen(!isSlotServiceDropdownOpen)}
-              className="h-10 w-full flex items-center justify-between rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
+              className="h-10 w-full flex items-center justify-between rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
             >
               <span>{filterService === "all" ? "Alle Dienstleistungen" : filterService}</span>
               <ChevronDown className="h-4 w-4" />
             </button>
             {isSlotServiceDropdownOpen && (
-              <div className="absolute z-20 w-full mt-1 bg-white dark:bg-card-dark border border-gray-200 dark:border-slate-800 rounded-md shadow-lg max-h-[200px] overflow-y-auto scrollbar-thin">
+              <div className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-md shadow-lg max-h-[200px] overflow-y-auto scrollbar-thin">
                 <button
                   className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-slate-800"
                   onClick={() => { setFilterService("all"); setIsSlotServiceDropdownOpen(false); }}
@@ -486,7 +486,7 @@ export function Clients() {
             )}
           </div>
           <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
             value={filterTime}
             onChange={(e) => setFilterTime(e.target.value)}
           >
@@ -496,7 +496,7 @@ export function Clients() {
             <option value="Abend">Abend</option>
           </select>
           <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-card-dark px-3 py-2 text-sm dark:text-white"
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
             value={filterAppointment}
             onChange={(e) => setFilterAppointment(e.target.value)}
           >
@@ -506,20 +506,19 @@ export function Clients() {
           </select>
         </div>
 
-      <div className="bg-white dark:bg-card-dark rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
-        <div className="overflow-x-auto max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-          <table className="w-full text-sm text-left table-fixed">
-            <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-indigo-50 dark:bg-slate-800/50 sticky top-0 z-10">
+      <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 overflow-hidden">
+        <div className="overflow-hidden max-h-none lg:max-h-[600px] lg:overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
+          <table className="w-full text-sm text-left border-collapse">
+            <thead className="hidden sm:table-header-group text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-indigo-50 dark:bg-slate-800/50 sticky top-0 z-10">
               <tr>
-                <th className="px-6 py-4 font-medium w-1/4">Kundenidentität</th>
-                <th className="px-6 py-4 font-medium hidden sm:table-cell w-1/5">Dienstleistungen</th>
-                <th className="px-6 py-4 font-medium hidden md:table-cell w-1/6">Bevorzugte Zeit</th>
-                <th className="px-6 py-4 font-medium w-1/8">Status</th>
-                <th className="px-6 py-4 font-medium w-1/8">Termin</th>
-                <th className="px-6 py-4 font-medium text-right w-1/6">Aktion</th>
+                <th className="px-6 py-4 font-medium w-3/12">Kunde</th>
+                <th className="px-6 py-4 font-medium w-3/12">Details</th>
+                <th className="px-6 py-4 font-medium w-2/12 text-center">Status</th>
+                <th className="px-6 py-4 font-medium w-2/12 text-center">Termin</th>
+                <th className="px-6 py-4 font-medium text-right w-2/12">Aktion</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-slate-800">
+            <tbody className="divide-y divide-gray-100 dark:divide-slate-800 block sm:table-row-group">
               {filteredClients.map((client) => {
                 const now = new Date();
                 const delayMinutes = parseInt(business?.appointmentStatusDelay || "0");
@@ -542,92 +541,76 @@ export function Clients() {
                 return (
                 <tr 
                   key={client.id} 
-                  className="hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                  className="block sm:table-row relative hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer p-4 sm:p-0"
                   onClick={() => {
                     setSelectedClientAppointments(clientAppointments);
                     setSelectedClientNotifiedSlots(notifiedSlots);
                     setIsAppointmentModalOpen(true);
                   }}
                 >
-                  <td className="px-6 py-4">
-                    <div className="font-bold text-deep-blue dark:text-white text-base">{client.name}</div>
-                    <div className="text-gray-500 dark:text-gray-400">{client.phone}</div>
-                    {isNotified && (
-                      <div className="sm:hidden mt-2">
-                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-accent/10 text-accent border border-accent/20">
-                          <Clock className="w-2.5 h-2.5 mr-1" /> Gemeldet
-                        </span>
-                      </div>
-                    )}
-                    <div className="sm:hidden mt-2 flex flex-wrap gap-1">
+                  <td className="block sm:table-cell px-2 sm:px-6 py-1 sm:py-4 pr-16 sm:pr-6">
+                    <div className="font-bold text-deep-blue dark:text-white text-base leading-none mb-1">{client.name}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{client.phone}</div>
+                  </td>
+                  <td className="block sm:table-cell px-2 sm:px-6 py-2 sm:py-4">
+                    <div className="flex flex-wrap gap-1.5">
                       {client.serviceTypes.slice(0, 2).map((s: string) => (
-                        <span key={s} className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 text-[10px] font-bold uppercase tracking-wider rounded">
+                        <span key={s} className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 text-[9px] font-bold uppercase tracking-wider rounded">
                           {s}
                         </span>
                       ))}
-                      {client.serviceTypes.length > 2 && <span className="text-[10px] text-gray-400">+{client.serviceTypes.length - 2}</span>}
+                      {client.serviceTypes.length > 2 && <span className="text-[9px] text-gray-400 font-bold">+{client.serviceTypes.length - 2}</span>}
                     </div>
-                    <div className="sm:hidden mt-1 flex items-center text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                      {client.preferredTimes.length > 0 ? client.preferredTimes.join(", ") : "Alle Zeiten"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 hidden sm:table-cell">
-                    <div className="flex flex-wrap gap-2 max-h-[100px] overflow-y-auto scrollbar-thin">
-                      {client.serviceTypes.slice(0, 5).map((s: string) => (
-                        <span key={s} className="px-2 py-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider rounded">
-                          {s}
-                        </span>
-                      ))}
-                      {client.serviceTypes.length > 5 && (
-                        <span className="text-xs text-gray-400">+{client.serviceTypes.length - 5}</span>
-                      )}
+                    <div className="mt-1 flex items-center text-[9px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                      {client.preferredTimes.length > 0 ? client.preferredTimes.join(", ") : "Jederzeit"}
                     </div>
                   </td>
-                  <td className="px-6 py-4 hidden md:table-cell">
-                    <div className="flex items-center text-gray-600 dark:text-gray-400 font-medium">
-                      {client.preferredTimes.length > 0 ? client.preferredTimes.join(", ") : "Alle Zeiten"}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1">
+                  <td className="inline-block sm:table-cell pl-2 sm:pl-6 pr-4 sm:pr-6 py-1 sm:py-4 sm:text-center align-middle mb-2 sm:mb-0">
+                    <div className="flex items-center gap-2 sm:justify-center">
+                      <span className="sm:hidden text-[10px] uppercase tracking-widest text-gray-400 font-bold">Status:</span>
                       {isNotified ? (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-accent/10 text-accent border border-accent/20">
-                          <Clock className="w-2.5 h-2.5 mr-1" /> Gemeldet
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-accent/10 text-accent border border-accent/20">
+                          <Clock className="w-2.5 h-2.5 mr-1" /> Benachrichtigt
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-100 dark:bg-slate-800 text-gray-500 border border-transparent">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-gray-400 border border-gray-200 dark:border-slate-700">
                           Inaktiv
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${hasAppointment ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400'}`}>
-                      {hasAppointment ? 'Ja' : 'Nein'}
-                    </span>
+                  <td className="inline-block sm:table-cell px-2 sm:px-6 py-1 sm:py-4 sm:text-center align-middle mb-2 sm:mb-0 border-l border-gray-200 dark:border-slate-700 sm:border-l-0">
+                    <div className="flex items-center gap-2 sm:justify-center pl-2 sm:pl-0">
+                      <span className="sm:hidden text-[10px] uppercase tracking-widest text-gray-400 font-bold">Termin:</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${hasAppointment ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400'}`}>
+                        {hasAppointment ? 'Ja' : 'Nein'}
+                      </span>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button 
+                  <td className="absolute top-3 right-3 sm:relative sm:top-auto sm:right-auto block sm:table-cell px-0 sm:px-6 py-0 sm:py-4 text-right border-none mt-0 sm:mt-0 pt-0 sm:pt-4">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           openEditModal(client);
                         }}
-                        className="text-gray-400 hover:text-deep-blue dark:hover:text-white p-2 transition-colors"
-                        title="Bearbeiten"
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-accent sm:hover:bg-accent/10"
                       >
                         <Edit2 className="h-4 w-4" />
-                      </button>
-                      <button 
+                      </Button>
+                      <Button
+                        variant="ghost" 
+                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
                           confirmDelete(client);
                         }}
-                        className="text-gray-400 hover:text-red-500 p-2 transition-colors"
-                        title="Löschen"
+                        className="h-8 w-8 p-0 text-gray-400 hover:text-red-500 sm:hover:bg-red-50"
                       >
                         <Trash2 className="h-4 w-4" />
-                      </button>
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -650,6 +633,18 @@ export function Clients() {
         onClose={() => setIsModalOpen(false)} 
         title={isEditMode ? "Kunde bearbeiten" : "Kunde hinzufügen"}
         headerClassName="bg-deep-blue"
+        footer={
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsModalOpen(false)}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold disabled:opacity-50" 
+              onClick={handleSaveClient}
+              disabled={isSubmitting || !name || !phone || !consentGiven}
+            >
+              {isSubmitting ? "Speichern..." : "Speichern"}
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-6">
           <div>
@@ -743,21 +738,22 @@ export function Clients() {
               Kunde hat der <span className="font-bold text-deep-blue dark:text-white border-b-2 border-accent">SMS-Benachrichtigung</span> und der Verarbeitung seiner Daten gemäß DSGVO ausdrücklich zugestimmt.
             </label>
           </div>
-
-          <div className="pt-4 flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold disabled:opacity-50" 
-              onClick={handleSaveClient}
-              disabled={isSubmitting || !name || !phone || !consentGiven}
-            >
-              {isSubmitting ? "Speichern..." : "Speichern"}
-            </Button>
-          </div>
         </div>
       </Modal>
 
-      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Kunde löschen">
+      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Kunde löschen"
+        footer={
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteModalOpen(false)}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" 
+              onClick={handleDeleteClient}
+            >
+              Endgültig löschen
+            </Button>
+          </div>
+        }
+      >
         <div className="space-y-6">
           <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
             <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
@@ -768,15 +764,6 @@ export function Clients() {
               </p>
             </div>
           </div>
-          <div className="pt-4 flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" 
-              onClick={handleDeleteClient}
-            >
-              Endgültig löschen
-            </Button>
-          </div>
         </div>
       </Modal>
 
@@ -785,6 +772,9 @@ export function Clients() {
         onClose={() => setIsAppointmentModalOpen(false)} 
         title="Termindetails"
         headerClassName="bg-indigo-500"
+        footer={
+          <Button variant="outline" className="w-full sm:w-auto ml-auto dark:border-slate-700 dark:text-white" onClick={() => setIsAppointmentModalOpen(false)}>Schließen</Button>
+        }
       >
         <div className="space-y-6">
           {selectedClientNotifiedSlots.length > 0 && (
@@ -864,13 +854,22 @@ export function Clients() {
               ))}
             </div>
           )}
-        </div>
-        <div className="pt-4">
-            <Button variant="outline" className="w-full dark:border-slate-700 dark:text-white" onClick={() => setIsAppointmentModalOpen(false)}>Schließen</Button>
           </div>
         </div>
       </Modal>
-      <Modal isOpen={isDeleteAppointmentModalOpen} onClose={() => setIsDeleteAppointmentModalOpen(false)} title="Termin löschen">
+      <Modal isOpen={isDeleteAppointmentModalOpen} onClose={() => setIsDeleteAppointmentModalOpen(false)} title="Termin löschen"
+        footer={
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteAppointmentModalOpen(false)}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold" 
+              onClick={confirmDeleteSlot}
+            >
+              Endgültig löschen
+            </Button>
+          </div>
+        }
+      >
         <div className="space-y-6">
           <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
             <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
@@ -880,16 +879,6 @@ export function Clients() {
                 Der Termin wird unwiderruflich aus der Datenbank entfernt.
               </p>
             </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteAppointmentModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold" 
-              onClick={confirmDeleteSlot}
-            >
-              Endgültig löschen
-            </Button>
           </div>
         </div>
       </Modal>
@@ -903,6 +892,18 @@ export function Clients() {
         }} 
         title="Termin bearbeiten"
         headerClassName="bg-deep-blue"
+        footer={
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsEditSlotModalOpen(false)}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold disabled:opacity-50" 
+              onClick={handleSaveSlot}
+              disabled={isSavingSlot || !newSlotDate || !newSlotTime || (!isCustomSlotService && !newSlotService) || (isCustomSlotService && !customSlotService.trim())}
+            >
+              {isSavingSlot ? "Speichern..." : "Speichern"}
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-6">
           <div>
@@ -1018,17 +1019,6 @@ export function Clients() {
                 className="mt-2 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
               />
             )}
-          </div>
-
-          <div className="pt-4 flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsEditSlotModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-deep-blue dark:bg-accent text-white dark:text-deep-blue hover:bg-gray-800 dark:hover:bg-accent-hover font-bold disabled:opacity-50" 
-              onClick={handleSaveSlot}
-              disabled={isSavingSlot || !newSlotDate || !newSlotTime || (!isCustomSlotService && !newSlotService) || (isCustomSlotService && !customSlotService.trim())}
-            >
-              {isSavingSlot ? "Speichern..." : "Speichern"}
-            </Button>
           </div>
         </div>
       </Modal>

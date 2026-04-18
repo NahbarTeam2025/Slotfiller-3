@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Users, Settings, LogOut, Calendar, Clock, Sun, Moon, Menu, X, CalendarDays, StickyNote, Bell, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Users, Settings, LogOut, Calendar, Clock, Menu, X, CalendarDays, StickyNote, Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
+import { useTheme } from "../contexts/ThemeContext";
 import { logOut, db } from "../firebase";
 import { handleFirestoreError, OperationType } from "../lib/firestore-errors";
 import { doc, onSnapshot, collection, query, where } from "firebase/firestore";
@@ -13,15 +14,11 @@ import { cn } from "../lib/utils";
 
 export function Layout() {
   const { user, businessId } = useAuth();
+  const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const [businessName, setBusinessName] = useState("SlotFiller");
   const [currentTime, setCurrentTime] = useState(new Date());
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved) return saved === 'dark';
-    return document.documentElement.classList.contains('dark');
-  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {

@@ -67,8 +67,8 @@ export function Onboarding() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50 dark:bg-black p-4 sm:p-8">
-      <div className="flex flex-col lg:flex-row w-full max-w-5xl mx-auto my-auto bg-white dark:bg-card-dark rounded-2xl shadow-xl overflow-hidden min-h-[600px] border border-gray-100 dark:border-slate-800">
+    <main className="flex min-h-screen bg-gray-50 dark:bg-black p-4 sm:p-8">
+      <div className="flex flex-col lg:flex-row w-full max-w-5xl mx-auto my-auto bg-white dark:bg-slate-900 rounded-2xl shadow-xl overflow-hidden min-h-[600px] border border-gray-100 dark:border-slate-800">
         {/* Left Side */}
         <div className="w-full lg:w-1/2 bg-deep-blue p-8 sm:p-12 flex flex-col justify-between text-white relative overflow-hidden">
           <div className="relative z-10">
@@ -101,12 +101,12 @@ export function Onboarding() {
           <div className="mb-8 sm:mb-10">
             <p className="text-accent text-xs font-bold tracking-widest uppercase mb-2">Onboarding</p>
             <h2 className="text-2xl sm:text-3xl font-bold text-deep-blue dark:text-white mb-2">Willkommen bei SlotFiller</h2>
-            <p className="text-gray-500 dark:text-gray-400">Richten wir dein Profil ein.</p>
+            <p className="text-gray-600 dark:text-gray-400 font-medium">Richten wir dein Profil ein.</p>
           </div>
 
           <div className="space-y-8 flex-1">
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Business-Name</label>
+              <label className="block text-xs font-bold tracking-widest text-gray-600 dark:text-gray-400 uppercase mb-2">Business-Name</label>
               <Input
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
@@ -116,7 +116,7 @@ export function Onboarding() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-4">Deine ersten Dienstleistungen</label>
+              <label className="block text-xs font-bold tracking-widest text-gray-600 dark:text-gray-400 uppercase mb-4">Deine ersten Dienstleistungen</label>
               <div className="space-y-2 mb-4">
                 {services.map((service) => (
                   <div key={service} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800/50 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-800">
@@ -151,6 +151,6 @@ export function Onboarding() {
           </Button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

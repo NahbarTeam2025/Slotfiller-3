@@ -1,16 +1,19 @@
 import { useState, useEffect, FormEvent } from "react";
-import { doc, onSnapshot, updateDoc, getDocs, collection, writeBatch } from "firebase/firestore";
-import { db } from "../firebase";
+import { doc, onSnapshot, updateDoc, getDocs, collection, writeBatch, deleteDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
+import { deleteUser } from "firebase/auth";
 import { useAuth } from "../contexts/AuthContext";
+import { useTheme } from "../contexts/ThemeContext";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Modal } from "../components/ui/modal";
 import { format } from "date-fns";
-import { Plus, X, MessageSquare, Save, CheckCircle2, Edit2, Trash2, AlertTriangle, ChevronDown } from "lucide-react";
+import { Plus, X, MessageSquare, Save, CheckCircle2, Edit2, Trash2, AlertTriangle, ChevronDown, Sun, Moon, Settings as SettingsIcon } from "lucide-react";
 import { cn } from "../lib/utils";
 
 export function Settings() {
   const { businessId } = useAuth();
+  const { theme, setTheme } = useTheme();
   const [business, setBusiness] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -224,6 +227,44 @@ export function Settings() {
   const [serviceToDelete, setServiceToDelete] = useState<string | null>(null);
   const [editingService, setEditingService] = useState<string | null>(null);
   const [editedServiceName, setEditedServiceName] = useState("");
+
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (!businessId || !auth.currentUser) return;
+    setIsDeletingAccount(true);
+    setDeleteAccountError(null);
+
+    try {
+      // 1. Delete subcollections (slots, clients, notifications)
+      const collectionsToDelete = ['slots', 'clients', 'notifications'];
+      for (const coll of collectionsToDelete) {
+        const snap = await getDocs(collection(db, `businesses/${businessId}/${coll}`));
+        const batch = writeBatch(db);
+        snap.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+      }
+
+      // 2. Delete business document
+      await deleteDoc(doc(db, "businesses", businessId));
+
+      // 3. Delete user from Firebase Auth
+      await deleteUser(auth.currentUser);
+
+      // Navigation is handled by AuthContext
+    } catch (error: any) {
+      console.error("Error deleting account", error);
+      if (error.code === 'auth/requires-recent-login') {
+        setDeleteAccountError("Um dein Konto zu löschen, musst du dich aus Sicherheitsgründen noch einmal neu einloggen.");
+      } else {
+        setDeleteAccountError("Ein Fehler ist aufgetreten. Bitte versuche es später erneut.");
+      }
+    } finally {
+      setIsDeletingAccount(false);
+    }
+  };
 
   const handleEditService = (service: string) => {
     setEditingService(service);
@@ -520,10 +561,10 @@ export function Settings() {
         <h1 className="text-3xl sm:text-4xl font-bold text-deep-blue dark:text-white">Einstellungen & SMS</h1>
       </div>
 
-      <div className="flex flex-col gap-8">
+      <div className="space-y-8 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-8">
         <div className="space-y-8">
           {/* Unternehmensprofil */}
-          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800 relative">
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800 relative">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Unternehmensprofil</h3>
               {isSaving && <span className="text-[10px] font-bold text-accent animate-pulse uppercase tracking-widest">Speichert...</span>}
@@ -595,103 +636,71 @@ export function Settings() {
             </div>
           </div>
 
-          {/* Kalender Einstellungen */}
-          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Kalender Einstellungen</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Taktung der Termine (Minuten)</label>
-                <select 
-                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                  value={slotInterval}
-                  onChange={(e) => {
-                    setSlotInterval(e.target.value);
-                    updateBusiness({ slotInterval: e.target.value });
-                  }}
-                >
-                  <option value="5">5 Minuten</option>
-                  <option value="15">15 Minuten</option>
-                  <option value="30">30 Minuten</option>
-                  <option value="60">60 Minuten</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Terminstatus Verzögerung (Kundenliste)</label>
-                <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">
-                  Wie lange soll ein Termin in der Kundenliste noch als "Ja" angezeigt werden, nachdem die Uhrzeit bereits vergangen ist?
-                </p>
-                <select 
-                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                  value={appointmentStatusDelay}
-                  onChange={(e) => {
-                    setAppointmentStatusDelay(e.target.value);
-                    updateBusiness({ appointmentStatusDelay: e.target.value });
-                  }}
-                >
-                  <option value="0">Sofort</option>
-                  <option value="5">5 Minuten</option>
-                  <option value="10">10 Minuten</option>
-                  <option value="15">15 Minuten</option>
-                  <option value="30">30 Minuten</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Benachrichtigungs-Ablaufzeit (Minuten vor Termin)</label>
-                <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">
-                  Wie viele Minuten vor dem Termin sollen Kunden, die benachrichtigt wurden, die Info erhalten, dass der Termin nicht mehr verfügbar ist?
-                </p>
-                <select 
-                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-                  value={notificationExpiryMinutes}
-                  onChange={(e) => {
-                    setNotificationExpiryMinutes(e.target.value);
-                    updateBusiness({ notificationExpiryMinutes: e.target.value });
-                  }}
-                >
-                  <option value="15">15 Minuten</option>
-                  <option value="30">30 Minuten</option>
-                  <option value="60">60 Minuten (1 Stunde)</option>
-                  <option value="120">120 Minuten (2 Stunden)</option>
-                  <option value="1440">1440 Minuten (24 Stunden)</option>
-                </select>
-              </div>
+          {/* Dienstleistungen verwalten */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Dienstleistungen verwalten</h3>
+              <span className="text-xs font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{services.length}</span>
+            </div>
+            <div className="mb-4">
+              <Input
+                value={serviceSearch}
+                onChange={(e) => setServiceSearch(e.target.value)}
+                placeholder="Dienstleistung suchen..."
+                className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white h-9 text-sm"
+              />
+            </div>
+            <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
+              {[...services]
+                .sort((a, b) => a.localeCompare(b))
+                .filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase()))
+                .map((service) => (
+                <div key={service} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
+                  {editingService === service ? (
+                    <Input
+                      value={editedServiceName}
+                      onChange={(e) => setEditedServiceName(e.target.value)}
+                      onBlur={() => handleSaveService(service)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSaveService(service)}
+                      className="h-8 text-sm"
+                      autoFocus
+                    />
+                  ) : (
+                    <span className="font-medium text-deep-blue dark:text-white">{service}</span>
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={() => handleEditService(service)} className="text-gray-400 hover:text-accent">
+                      <Edit2 className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => {
+                      setServiceToDelete(service);
+                      setIsDeleteServiceModalOpen(true);
+                    }} className="text-gray-400 hover:text-red-500">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {services.filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase())).length === 0 && (
+                <div className="text-center py-4 text-xs text-gray-400 uppercase tracking-widest">Keine Dienstleistung gefunden</div>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={newService}
+                onChange={(e) => setNewService(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddService()}
+                placeholder="Weitere Dienstleistung hinzufügen..."
+                className="border-dashed border-2 border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+              <Button onClick={handleAddService} variant="outline" className="border-dashed border-2 border-gray-200 dark:border-slate-700 text-accent hover:text-accent-hover hover:border-accent">
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
-          {/* Feiertage (Bundesland Auswahl) */}
-          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Feiertage</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie Ihr Bundesland aus, um Feiertage automatisch im Kalender anzuzeigen.</p>
-            <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              value={federalState}
-              onChange={(e) => {
-                setFederalState(e.target.value);
-                updateBusiness({ federalState: e.target.value });
-              }}
-            >
-              <option value="">Bundesland auswählen...</option>
-              <option value="BW">Baden-Württemberg</option>
-              <option value="BY">Bayern</option>
-              <option value="BE">Berlin</option>
-              <option value="BB">Brandenburg</option>
-              <option value="HB">Bremen</option>
-              <option value="HH">Hamburg</option>
-              <option value="HE">Hessen</option>
-              <option value="MV">Mecklenburg-Vorpommern</option>
-              <option value="NI">Niedersachsen</option>
-              <option value="NW">Nordrhein-Westfalen</option>
-              <option value="RP">Rheinland-Pfalz</option>
-              <option value="SL">Saarland</option>
-              <option value="SN">Sachsen</option>
-              <option value="ST">Sachsen-Anhalt</option>
-              <option value="SH">Schleswig-Holstein</option>
-              <option value="TH">Thüringen</option>
-            </select>
-          </div>
-
           {/* Mitarbeiter Verwalten */}
-          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Mitarbeiter</h3>
               <span className="text-xs font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{employees.length}</span>
@@ -765,9 +774,8 @@ export function Settings() {
             </Button>
           </div>
 
-          {/* Abwesenheiten (Urlaub, Krankheit, Feiertage) */}
-          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Dashboard & Kalender Filter</h3>
+          {/* Kalender & Dashboard Filter */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie einen Mitarbeiter aus, dessen Termine standardmäßig auf dem Dashboard und im Kalender angezeigt werden sollen.</p>
             <select 
               className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
@@ -785,8 +793,7 @@ export function Settings() {
           </div>
 
           {/* Abwesenheiten (Urlaub, Krankheit, Feiertage) */}
-          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Abwesenheiten (Urlaub, Krankheit)</h3>
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <div className="mb-4">
               <Input
                 value={absenceSearch}
@@ -854,71 +861,168 @@ export function Settings() {
         </div>
 
         <div className="space-y-8">
-          {/* Dienstleistungen verwalten */}
-          <div className="bg-white dark:bg-card-dark rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Dienstleistungen verwalten</h3>
-              <span className="text-xs font-bold text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{services.length}</span>
+          {/* Kalender Einstellungen */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Kalender Einstellungen</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Taktung der Termine (Minuten)</label>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  value={slotInterval}
+                  onChange={(e) => {
+                    setSlotInterval(e.target.value);
+                    updateBusiness({ slotInterval: e.target.value });
+                  }}
+                >
+                  <option value="5">5 Minuten</option>
+                  <option value="15">15 Minuten</option>
+                  <option value="30">30 Minuten</option>
+                  <option value="60">60 Minuten</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Terminstatus Verzögerung (Kundenliste)</label>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">
+                  Wie lange soll ein Termin in der Kundenliste noch als "Ja" angezeigt werden, nachdem die Uhrzeit bereits vergangen ist?
+                </p>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  value={appointmentStatusDelay}
+                  onChange={(e) => {
+                    setAppointmentStatusDelay(e.target.value);
+                    updateBusiness({ appointmentStatusDelay: e.target.value });
+                  }}
+                >
+                  <option value="0">Sofort</option>
+                  <option value="5">5 Minuten</option>
+                  <option value="10">10 Minuten</option>
+                  <option value="15">15 Minuten</option>
+                  <option value="30">30 Minuten</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Benachrichtigungs-Ablaufzeit (Minuten vor Termin)</label>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-2">
+                  Wie viele Minuten vor dem Termin sollen Kunden, die benachrichtigt wurden, die Info erhalten, dass der Termin nicht mehr verfügbar ist?
+                </p>
+                <select 
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  value={notificationExpiryMinutes}
+                  onChange={(e) => {
+                    setNotificationExpiryMinutes(e.target.value);
+                    updateBusiness({ notificationExpiryMinutes: e.target.value });
+                  }}
+                >
+                  <option value="15">15 Minuten</option>
+                  <option value="30">30 Minuten</option>
+                  <option value="60">60 Minuten (1 Stunde)</option>
+                  <option value="120">120 Minuten (2 Stunden)</option>
+                  <option value="1440">1440 Minuten (24 Stunden)</option>
+                </select>
+              </div>
             </div>
-            <div className="mb-4">
-              <Input
-                value={serviceSearch}
-                onChange={(e) => setServiceSearch(e.target.value)}
-                placeholder="Dienstleistung suchen..."
-                className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white h-9 text-sm"
-              />
-            </div>
-            <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
-              {[...services]
-                .sort((a, b) => a.localeCompare(b))
-                .filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase()))
-                .map((service) => (
-                <div key={service} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
-                  {editingService === service ? (
-                    <Input
-                      value={editedServiceName}
-                      onChange={(e) => setEditedServiceName(e.target.value)}
-                      onBlur={() => handleSaveService(service)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveService(service)}
-                      className="h-8 text-sm"
-                      autoFocus
-                    />
-                  ) : (
-                    <span className="font-medium text-deep-blue dark:text-white">{service}</span>
-                  )}
-                  <div className="flex gap-2">
-                    <button onClick={() => handleEditService(service)} className="text-gray-400 hover:text-accent">
-                      <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button onClick={() => {
-                      setServiceToDelete(service);
-                      setIsDeleteServiceModalOpen(true);
-                    }} className="text-gray-400 hover:text-red-500">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+          </div>
+
+          {/* Feiertage (Bundesland Auswahl) */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Feiertage</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie Ihr Bundesland aus, um Feiertage automatisch im Kalender anzuzeigen.</p>
+            <select 
+              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+              value={federalState}
+              onChange={(e) => {
+                setFederalState(e.target.value);
+                updateBusiness({ federalState: e.target.value });
+              }}
+            >
+              <option value="">Bundesland auswählen...</option>
+              <option value="BW">Baden-Württemberg</option>
+              <option value="BY">Bayern</option>
+              <option value="BE">Berlin</option>
+              <option value="BB">Brandenburg</option>
+              <option value="HB">Bremen</option>
+              <option value="HH">Hamburg</option>
+              <option value="HE">Hessen</option>
+              <option value="MV">Mecklenburg-Vorpommern</option>
+              <option value="NI">Niedersachsen</option>
+              <option value="NW">Nordrhein-Westfalen</option>
+              <option value="RP">Rheinland-Pfalz</option>
+              <option value="SL">Saarland</option>
+              <option value="SN">Sachsen</option>
+              <option value="ST">Sachsen-Anhalt</option>
+              <option value="SH">Schleswig-Holstein</option>
+              <option value="TH">Thüringen</option>
+            </select>
+          </div>
+
+          {/* Aussehen (Theme) */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Aussehen</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-6">Wähle dein bevorzugtes Design für die Anwendung.</p>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <button 
+                onClick={() => setTheme('light')}
+                className={cn(
+                  "p-4 rounded-xl border-2 transition-all text-left flex flex-col gap-3 group",
+                  theme === 'light' 
+                    ? "border-accent bg-accent/5" 
+                    : "border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-900 hover:border-accent/40"
+                )}
+              >
+                <div className="w-10 h-10 rounded-lg bg-white shadow-sm flex items-center justify-center text-orange-500">
+                  <Sun className="h-6 w-6" />
                 </div>
-              ))}
-              {services.filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase())).length === 0 && (
-                <div className="text-center py-4 text-xs text-gray-400 uppercase tracking-widest">Keine Dienstleistung gefunden</div>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Input
-                value={newService}
-                onChange={(e) => setNewService(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddService()}
-                placeholder="Weitere Dienstleistung hinzufügen..."
-                className="border-dashed border-2 border-gray-200 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-              <Button onClick={handleAddService} variant="outline" className="border-dashed border-2 border-gray-200 dark:border-slate-700 text-accent hover:text-accent-hover hover:border-accent">
-                <Plus className="h-4 w-4" />
-              </Button>
+                <div>
+                  <p className="text-sm font-bold text-deep-blue dark:text-white">Hell</p>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500">Klassisches helles Design</p>
+                </div>
+                {theme === 'light' && <CheckCircle2 className="h-4 w-4 text-accent absolute top-3 right-3" />}
+              </button>
+
+              <button 
+                onClick={() => setTheme('dark')}
+                className={cn(
+                  "p-4 rounded-xl border-2 transition-all text-left flex flex-col gap-3 group relative",
+                  theme === 'dark' 
+                    ? "border-accent bg-accent/5" 
+                    : "border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-900 hover:border-accent/40"
+                )}
+              >
+                <div className="w-10 h-10 rounded-lg bg-slate-800 shadow-sm flex items-center justify-center text-indigo-400">
+                  <Moon className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-deep-blue dark:text-white">Dunkel</p>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500">Schonend für die Augen</p>
+                </div>
+                {theme === 'dark' && <CheckCircle2 className="h-4 w-4 text-accent absolute top-3 right-3" />}
+              </button>
+
+              <button 
+                onClick={() => setTheme('system')}
+                className={cn(
+                  "p-4 rounded-xl border-2 transition-all text-left flex flex-col gap-3 group relative",
+                  theme === 'system' 
+                    ? "border-accent bg-accent/5" 
+                    : "border-gray-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-900 hover:border-accent/40"
+                )}
+              >
+                <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-slate-800 shadow-sm flex items-center justify-center text-gray-600 dark:text-gray-400">
+                  <SettingsIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-deep-blue dark:text-white">System</p>
+                  <p className="text-[10px] text-gray-400 dark:text-gray-500">Folgt deinen Systemeinstellungen</p>
+                </div>
+                {theme === 'system' && <CheckCircle2 className="h-4 w-4 text-accent absolute top-3 right-3" />}
+              </button>
             </div>
           </div>
 
           {/* Twilio Verbindung */}
-          <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-xl p-6 border border-indigo-100 dark:border-indigo-800">
+          <div className="bg-indigo-50 dark:bg-indigo-900/10 rounded-xl p-6 border border-indigo-100 dark:border-indigo-800">
             <div className="flex items-center gap-3 mb-6">
               <div className="bg-white dark:bg-slate-800 p-2 rounded-full border border-red-100 dark:border-red-900/30">
                 <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center">
@@ -1008,299 +1112,55 @@ export function Settings() {
           </div>
         </div>
       </div>
-      <Modal 
-        isOpen={isEmployeeModalOpen} 
-        onClose={() => setIsEmployeeModalOpen(false)} 
-        title={editingEmployeeId ? "Mitarbeiter bearbeiten" : "Mitarbeiter anlegen"}
-        headerClassName="bg-slate-500"
-      >
-        <div className="space-y-6">
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Name</label>
-            <Input 
-              value={employeeName} 
-              onChange={(e) => setEmployeeName(e.target.value)}
-              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-            />
-          </div>
 
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Telefonnummer (Optional)</label>
-            <Input 
-              value={employeePhone} 
-              onChange={(e) => setEmployeePhone(e.target.value)}
-              placeholder="+49 123 456789"
-              className="dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-            />
+      <div className="mt-12 pt-8 border-t border-red-100 dark:border-red-900/30">
+        <div className="bg-red-50 dark:bg-red-900/10 rounded-xl p-6 border border-red-100 dark:border-red-900/20">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-red-100 dark:bg-red-900/30 p-2 rounded-lg">
+              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-red-900 dark:text-red-400 uppercase tracking-widest">Gefahrenzone</h3>
+              <p className="text-xs text-red-700/60 dark:text-red-500/60">Konto und Daten dauerhaft löschen</p>
+            </div>
           </div>
           
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Dienstleistungen</label>
-            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
-              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
-                <Input
-                  placeholder="Dienstleistung suchen..."
-                  value={employeeServiceSearch}
-                  onChange={(e) => setEmployeeServiceSearch(e.target.value)}
-                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                />
-              </div>
-              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
-                {[...services]
-                  .filter(s => s.toLowerCase().startsWith(employeeServiceSearch.toLowerCase()))
-                  .sort((a, b) => a.localeCompare(b))
-                  .map(service => (
-                  <label
-                    key={service}
-                    className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={employeeServices.includes(service)}
-                      onChange={() => setEmployeeServices(prev => 
-                        prev.includes(service) ? prev.filter(s => s !== service) : [...prev, service]
-                      )}
-                      className="accent-accent"
-                    />
-                    <span>{service}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="p-2 border-t border-gray-100 dark:border-slate-700">
-                  <label className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isCustomEmployeeService}
-                      onChange={() => setIsCustomEmployeeService(!isCustomEmployeeService)}
-                      className="accent-accent"
-                    />
-                    <span>Individuell...</span>
-                  </label>
-              </div>
-            </div>
-            {isCustomEmployeeService && renderCustomEmployeeServicesList()}
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Arbeitszeiten</label>
-            <div className="space-y-3 max-h-60 overflow-y-auto pr-2 scrollbar-thin">
-              {DAYS.map((day) => (
-                <div key={day.id} className="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-slate-800/50 border border-gray-100 dark:border-slate-800">
-                  <div className="w-24 shrink-0">
-                    <span className="text-sm font-bold text-deep-blue dark:text-white">{day.label}</span>
-                  </div>
-                  
-                  <div className="flex flex-col flex-1 gap-2">
-                    <div className="flex items-center gap-2">
-                      <Input 
-                        type="time"
-                        disabled={employeeHours[day.id]?.closed}
-                        value={employeeHours[day.id]?.open || "08:00"} 
-                        onChange={(e) => {
-                          const newHours = {...employeeHours, [day.id]: {...employeeHours[day.id], open: e.target.value}};
-                          setEmployeeHours(newHours);
-                        }}
-                        className="h-8 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                      />
-                      <span className="text-gray-400">-</span>
-                      <Input 
-                        type="time"
-                        disabled={employeeHours[day.id]?.closed}
-                        value={employeeHours[day.id]?.close || "18:00"} 
-                        onChange={(e) => {
-                          const newHours = {...employeeHours, [day.id]: {...employeeHours[day.id], close: e.target.value}};
-                          setEmployeeHours(newHours);
-                        }}
-                        className="h-8 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white"
-                      />
-                    </div>
-                    
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={employeeHours[day.id]?.closed}
-                        onChange={(e) => {
-                          const newHours = {...employeeHours, [day.id]: {...employeeHours[day.id], closed: e.target.checked}};
-                          setEmployeeHours(newHours);
-                        }}
-                        className="rounded border-gray-300 text-accent focus:ring-accent"
-                      />
-                      <span className="text-xs text-gray-500 dark:text-gray-400">Arbeitet nicht</span>
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="pt-4 flex gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsEmployeeModalOpen(false)}>Abbrechen</Button>
-            <Button className="flex-1 bg-deep-blue dark:bg-accent text-white hover:bg-gray-800 dark:hover:bg-accent-hover font-bold" onClick={handleSaveEmployee}>
-              Speichern
-            </Button>
-          </div>
+          <p className="text-sm text-red-800 dark:text-red-400/80 mb-6">
+            Wenn du dein Konto löschst, werden alle deine Daten, Kunden, Termine und Einstellungen unwiderruflich entfernt. Dieser Vorgang kann nicht rückgängig gemacht werden.
+          </p>
+          
+          <Button 
+            variant="outline" 
+            className="border-red-200 dark:border-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white dark:hover:bg-red-900/60 transition-all font-bold"
+            onClick={() => setIsDeleteAccountModalOpen(true)}
+          >
+            Mein Konto dauerhaft löschen
+          </Button>
         </div>
-      </Modal>
-      <Modal isOpen={isDeleteEmployeeModalOpen} onClose={() => setIsDeleteEmployeeModalOpen(false)} title="Mitarbeiter löschen">
-        <div className="space-y-6">
-          <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold mb-1">Möchtest du diesen Mitarbeiter wirklich löschen?</p>
-              <p className="text-sm opacity-90">
-                Der Mitarbeiter "{employeeToDelete?.name}" wird unwiderruflich entfernt.
-              </p>
-            </div>
-          </div>
-          <div className="pt-4 flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteEmployeeModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" 
-              onClick={handleRemoveEmployee}
-            >
-              Endgültig löschen
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      </div>
 
       <Modal 
-        isOpen={isAbsenceModalOpen} 
-        onClose={() => {
-          setIsAbsenceModalOpen(false);
-          setIsAbsenceEmployeeDropdownOpen(false);
-          setAbsenceEmployeeSearch("");
-        }} 
-        title={editingAbsenceId ? "Abwesenheit bearbeiten" : "Abwesenheit eintragen"}
-        headerClassName="bg-slate-500"
+        isOpen={isDeleteAccountModalOpen} 
+        onClose={() => setIsDeleteAccountModalOpen(false)} 
+        title="Konto löschen"
+        headerClassName="bg-red-600 text-white"
+        footer={
+          <div className="flex flex-col sm:flex-row gap-3 w-full">
+            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteAccountModalOpen(false)} disabled={isDeletingAccount}>Abbrechen</Button>
+            <Button 
+              className="flex-1 bg-red-600 text-white hover:bg-red-700 font-bold" 
+              onClick={handleDeleteAccount}
+              disabled={isDeletingAccount}
+            >
+              {isDeletingAccount ? "Wird gelöscht..." : "Endgültig löschen"}
+            </Button>
+          </div>
+        }
       >
-        <div className="space-y-6">
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Mitarbeiter</label>
-            <button
-              type="button"
-              onClick={() => setIsAbsenceEmployeeDropdownOpen(!isAbsenceEmployeeDropdownOpen)}
-              className="flex items-center justify-between w-full px-3 py-2 rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium dark:text-white"
-            >
-              <span>{absenceData.employeeId ? employees.find(e => e.id === absenceData.employeeId)?.name : "Mitarbeiter auswählen..."}</span>
-              <ChevronDown className={`h-4 w-4 transition-transform ${isAbsenceEmployeeDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {isAbsenceEmployeeDropdownOpen && (
-              <div className="mt-2 border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
-                <div className="p-2 border-b border-gray-100 dark:border-slate-700">
-                  <Input
-                    placeholder="Mitarbeiter suchen..."
-                    value={absenceEmployeeSearch}
-                    onChange={(e) => setAbsenceEmployeeSearch(e.target.value)}
-                    className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
-                  />
-                </div>
-                <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[180px]">
-                  <button
-                    onClick={() => { setAbsenceData({...absenceData, employeeId: ""}); setAbsenceEmployeeSearch(""); setIsAbsenceEmployeeDropdownOpen(false); }}
-                    className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                      absenceData.employeeId === "" 
-                        ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    Mitarbeiter auswählen...
-                  </button>
-                  {employees
-                    .filter(e => e.name.toLowerCase().startsWith(absenceEmployeeSearch.toLowerCase()))
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map(emp => (
-                    <button
-                      key={emp.id}
-                      onClick={() => { setAbsenceData({...absenceData, employeeId: emp.id}); setAbsenceEmployeeSearch(""); setIsAbsenceEmployeeDropdownOpen(false); }}
-                      className={`px-3 py-2 rounded-md text-sm font-medium text-left transition-colors ${
-                        absenceData.employeeId === emp.id 
-                          ? 'bg-accent/20 text-deep-blue dark:text-white' 
-                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      {emp.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Typ</label>
-            <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              value={absenceData.type}
-              onChange={(e) => setAbsenceData({...absenceData, type: e.target.value})}
-            >
-              <option value="Urlaub">Urlaub</option>
-              <option value="Krankheit">Krankheit</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Von</label>
-              <Input type="date" value={absenceData.startDate} onChange={(e) => setAbsenceData({...absenceData, startDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
-            </div>
-            <div>
-              <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Bis</label>
-              <Input type="date" value={absenceData.endDate} onChange={(e) => setAbsenceData({...absenceData, endDate: e.target.value})} className="dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
-            </div>
-          </div>
-
-          <div className="pt-4 flex gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsAbsenceModalOpen(false)}>Abbrechen</Button>
-            <Button className="flex-1 bg-deep-blue dark:bg-accent text-white hover:bg-gray-800 dark:hover:bg-accent-hover font-bold" onClick={handleSaveAbsence}>
-              Speichern
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={isDeleteAbsenceModalOpen} onClose={() => setIsDeleteAbsenceModalOpen(false)} title="Abwesenheit löschen">
-        <div className="space-y-6">
-          <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold mb-1">Möchtest du diese Abwesenheit wirklich löschen?</p>
-              <p className="text-sm opacity-90">
-                Die Abwesenheit wird unwiderruflich entfernt.
-              </p>
-            </div>
-          </div>
-          <div className="pt-4 flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteAbsenceModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" 
-              onClick={handleRemoveAbsence}
-            >
-              Endgültig löschen
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={isDeleteServiceModalOpen} onClose={() => setIsDeleteServiceModalOpen(false)} title="Dienstleistung löschen">
-        <div className="space-y-6">
-          <div className="bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-400 p-4 rounded-lg flex items-start gap-3 border border-red-100 dark:border-red-900/30">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold mb-1">Möchtest du diese Dienstleistung wirklich löschen?</p>
-              <p className="text-sm opacity-90">
-                Die Dienstleistung "{serviceToDelete}" wird unwiderruflich entfernt.
-              </p>
-            </div>
-          </div>
-          <div className="pt-4 flex flex-col sm:flex-row gap-3">
-            <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteServiceModalOpen(false)}>Abbrechen</Button>
-            <Button 
-              className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" 
-              onClick={handleRemoveService}
-            >
-              Endgültig löschen
-            </Button>
+        <div className="space-y-4">
+          <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-lg border border-red-100 dark:border-red-900/30 text-red-800 dark:text-red-400">
+            <p className="text-sm font-bold">ACHTUNG: Diese Aktion ist endgültig!</p>
+            <p className="text-xs mt-2">Alle Daten, Kunden, Termine und Einstellungen werden gelöscht. Dies kann nicht rückgängig gemacht werden.</p>
           </div>
         </div>
       </Modal>
