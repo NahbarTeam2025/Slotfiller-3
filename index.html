@@ -6,14 +6,41 @@
     <meta name="description" content="Automatische Terminvergabe und SMS-Benachrichtigungen für Dienstleister. Kein Termin bleibt leer." />
     <title>SlotFiller</title>
     <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
-    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:300,400,500,600,700|outfit:400,700,900&display=swap" />
-    <link rel="preconnect" href="https://apis.google.com" crossorigin />
-    <link rel="preconnect" href="https://robert-n8n-477405.firebaseapp.com" crossorigin />
     <link rel="dns-prefetch" href="https://fonts.bunny.net" />
+    
+    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:300,400,500,600,700|outfit:400,700,900&display=swap" fetchpriority="high" />
+    
+    <link rel="preconnect" href="https://apis.google.com" />
+    <link rel="dns-prefetch" href="https://apis.google.com" />
+    
+    <link rel="preconnect" href="https://robert-n8n-477405.firebaseapp.com" />
+    <link rel="dns-prefetch" href="https://robert-n8n-477405.firebaseapp.com" />
+    
+    <link rel="preconnect" href="https://www.googleapis.com" />
+    <link rel="dns-prefetch" href="https://www.googleapis.com" />
+
+    <style>
+      :root {
+        --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-display: "Outfit", sans-serif;
+      }
+      body {
+        margin: 0;
+        background-color: #f8fafc; /* bg-slate-50 */
+        font-family: var(--font-sans);
+        color: #1a1a2e; /* text-deep-blue */
+        -webkit-font-smoothing: antialiased;
+      }
+      .dark body {
+        background-color: #020617; /* dark:bg-slate-950 */
+        color: #f1f5f9; /* dark:text-slate-100 */
+      }
+      h1 { font-family: var(--font-display); font-weight: 700; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx" fetchpriority="high"></script>
   </body>
 </html>
 
