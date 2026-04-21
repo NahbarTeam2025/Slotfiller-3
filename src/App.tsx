@@ -18,7 +18,7 @@ const Notifications = lazy(() => import("./pages/Notifications").then(m => ({ de
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, businessId, loading } = useAuth();
 
-  if (loading) return <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 dark:text-white">Laden...</div>;
+  if (loading) return null;
   if (!user) return <Navigate to="/login" />;
   if (!businessId) return <Navigate to="/onboarding" />;
 
@@ -27,7 +27,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function AppRoutes() {
   return (
-    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 dark:text-white">Laden...</div>}>
+    <Suspense fallback={null}>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/onboarding" element={<Onboarding />} />

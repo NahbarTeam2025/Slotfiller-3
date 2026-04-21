@@ -8,39 +8,75 @@
     <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
     <link rel="dns-prefetch" href="https://fonts.bunny.net" />
     
-    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:300,400,500,600,700|outfit:400,700,900&display=swap" fetchpriority="high" />
-    
-    <link rel="preconnect" href="https://apis.google.com" />
-    <link rel="dns-prefetch" href="https://apis.google.com" />
+    <link rel="preload" as="style" href="https://fonts.bunny.net/css?family=inter:300,400,500,600,700|outfit:400,700,900&display=swap" />
+    <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter:300,400,500,600,700|outfit:400,700,900&display=swap" media="print" onload="this.media='all'" />
     
     <link rel="preconnect" href="https://robert-n8n-477405.firebaseapp.com" />
-    <link rel="dns-prefetch" href="https://robert-n8n-477405.firebaseapp.com" />
-    
     <link rel="preconnect" href="https://www.googleapis.com" />
-    <link rel="dns-prefetch" href="https://www.googleapis.com" />
 
     <style>
       :root {
-        --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-        --font-display: "Outfit", sans-serif;
+        --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        --font-display: sans-serif;
+        --color-deep-blue: #1a1a2e;
       }
       body {
         margin: 0;
-        background-color: #f8fafc; /* bg-slate-50 */
+        background-color: #ffffff;
         font-family: var(--font-sans);
-        color: #1a1a2e; /* text-deep-blue */
+        color: var(--color-deep-blue);
         -webkit-font-smoothing: antialiased;
+        overflow: hidden;
       }
-      .dark body {
-        background-color: #020617; /* dark:bg-slate-950 */
-        color: #f1f5f9; /* dark:text-slate-100 */
+      .splash-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        background-color: #ffffff;
+        transition: opacity 0.4s ease-out;
       }
-      h1 { font-family: var(--font-display); font-weight: 700; }
+      .splash-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        margin: 0 0 0.5rem 0;
+        letter-spacing: -0.025em;
+      }
+      .splash-subtitle {
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        opacity: 0.5;
+        margin: 0;
+      }
+      @media (prefers-color-scheme: dark) {
+        body, .splash-screen { background-color: #000000; color: #ffffff; }
+      }
     </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx" fetchpriority="high"></script>
+    <div id="root">
+      <div class="splash-screen" id="splash">
+        <h1 class="splash-title">SlotFiller</h1>
+        <p class="splash-subtitle">Kein Termin bleibt leer.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      window.addEventListener('load', function() {
+        const splash = document.getElementById('splash');
+        if (splash) {
+          setTimeout(() => {
+            splash.style.opacity = '0';
+            setTimeout(() => splash.remove(), 400);
+          }, 200);
+        }
+      });
+    </script>
   </body>
 </html>
 

@@ -15,8 +15,8 @@ export default defineConfig(({mode}) => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
-              if (id.includes('firebase')) return 'firebase';
-              if (id.includes('lucide') || id.includes('motion')) return 'ui-icons';
+              if (id.includes('firebase')) return 'firebase-core';
+              // Keep other vendors in a single chunk for better compression and fewer requests
               return 'vendor';
             }
           },
