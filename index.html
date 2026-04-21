@@ -17,15 +17,18 @@
     <style>
       :root {
         --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
-        --font-display: sans-serif;
         --color-deep-blue: #1a1a2e;
+        --bg-light: #f8fafc;
+        --bg-dark: #020617;
       }
       body {
         margin: 0;
-        background-color: #ffffff;
-        font-family: var(--font-sans);
+        background-color: var(--bg-light);
         color: var(--color-deep-blue);
         -webkit-font-smoothing: antialiased;
+        font-family: var(--font-sans);
+      }
+      body.loading {
         overflow: hidden;
       }
       .splash-screen {
@@ -36,8 +39,17 @@
         align-items: center;
         justify-content: center;
         z-index: 9999;
-        background-color: #ffffff;
+        background-color: var(--bg-light);
+        color: var(--color-deep-blue);
         transition: opacity 0.4s ease-out;
+      }
+      @media (prefers-color-scheme: dark) {
+        body.loading { background-color: var(--bg-dark); color: #ffffff; }
+        .splash-screen { background-color: var(--bg-dark); color: #ffffff; }
+      }
+      /* Ensure that once loading is done, the app's own styles take over completely */
+      body:not(.loading) {
+        background-color: transparent;
       }
       .splash-title {
         font-size: 2.5rem;
@@ -53,12 +65,9 @@
         opacity: 0.5;
         margin: 0;
       }
-      @media (prefers-color-scheme: dark) {
-        body, .splash-screen { background-color: #000000; color: #ffffff; }
-      }
     </style>
   </head>
-  <body>
+  <body class="loading">
     <div id="root">
       <div class="splash-screen" id="splash">
         <h1 class="splash-title">SlotFiller</h1>
@@ -67,15 +76,22 @@
     </div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      window.addEventListener('load', function() {
-        const splash = document.getElementById('splash');
-        if (splash) {
-          setTimeout(() => {
+      (function() {
+        const finishLoading = () => {
+          const splash = document.getElementById('splash');
+          if (splash) {
             splash.style.opacity = '0';
-            setTimeout(() => splash.remove(), 400);
-          }, 200);
-        }
-      });
+            setTimeout(() => {
+              splash.remove();
+              document.body.classList.remove('loading');
+            }, 400);
+          }
+        };
+        
+        // Use a timeout as a safety fallback in case 'load' event doesn't fire soon enough
+        window.addEventListener('load', finishLoading);
+        setTimeout(finishLoading, 2000); 
+      })();
     </script>
   </body>
 </html>
