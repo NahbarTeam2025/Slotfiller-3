@@ -9,7 +9,7 @@ import { Modal } from "../components/ui/modal";
 import { Input } from "../components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
-import { Calendar, CheckCircle, Users, Plus, MoreVertical, Edit2, Trash2, AlertTriangle, Calendar as CalendarIcon, Clock, ChevronDown, X, XCircle } from "lucide-react";
+import { Calendar, CheckCircle, Users, Plus, MoreVertical, Edit2, Trash2, AlertTriangle, Calendar as CalendarIcon, Clock, ChevronDown, X, XCircle, CheckCircle2 } from "lucide-react";
 import Holidays from "date-holidays";
 
 import { Skeleton } from "../components/ui/skeleton";
@@ -18,6 +18,65 @@ import { NotifiedClientsModal } from "../components/modals/NotifiedClientsModal"
 import { CancelModal } from "../components/modals/CancelModal";
 import { NotificationManagerModal } from "../components/modals/NotificationManagerModal";
 import { FreeSlotModal } from "../components/modals/FreeSlotModal";
+import { cn } from "../lib/utils";
+
+const CustomEmployeeSelect = ({ employees, value, onChange }: { employees: any[], value: string, onChange: (val: string) => void }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const employeeNames: Record<string, string> = { "Alle": "Alle Mitarbeiter" };
+  employees.forEach(e => employeeNames[e.id] = e.name);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between w-full appearance-none bg-gray-50 dark:bg-slate-800/50 border border-gray-200 dark:border-slate-700 text-deep-blue dark:text-white rounded-xl px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent transition-all hover:bg-gray-100 dark:hover:bg-slate-800"
+      >
+        <span className="line-clamp-1">{employeeNames[value] || "Auswählen..."}</span>
+        <ChevronDown className="h-4 w-4 text-gray-500 shrink-0" />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-[40]" onClick={() => setIsOpen(false)}></div>
+          <div className="absolute z-[50] mt-2 w-full bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 overflow-hidden transform animate-in fade-in slide-in-from-top-2 duration-200">
+            {/* Show only 5 items max by calculating approx height: ~40px per item * 5 = 200px max-height */}
+            <div className="max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700 py-1">
+              <div
+                className={cn(
+                  "px-4 py-2.5 text-sm cursor-pointer transition-colors flex items-center justify-between group mx-1 rounded-lg mt-1 mb-1",
+                  value === "Alle" 
+                    ? "bg-accent/10 text-accent font-bold" 
+                    : "text-deep-blue dark:text-white hover:bg-gray-50 dark:hover:bg-slate-700/50"
+                )}
+                onClick={() => { onChange("Alle"); setIsOpen(false); }}
+              >
+                <span>Alle Mitarbeiter</span>
+                {value === "Alle" && <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />}
+              </div>
+              <div className="h-px bg-gray-100 dark:bg-slate-700 mx-2 my-1"></div>
+              {employees.map(emp => (
+                <div
+                  key={emp.id}
+                  className={cn(
+                    "px-4 py-2.5 text-sm cursor-pointer transition-colors flex items-center justify-between group mx-1 rounded-lg my-0.5",
+                    value === emp.id 
+                      ? "bg-accent/10 text-accent font-bold" 
+                      : "text-deep-blue dark:text-white hover:bg-gray-50 dark:hover:bg-slate-700/50"
+                  )}
+                  onClick={() => { onChange(emp.id); setIsOpen(false); }}
+                >
+                  <span className="line-clamp-1">{emp.name}</span>
+                  {value === emp.id && <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 export function Dashboard() {
   const { businessId } = useAuth();
@@ -50,7 +109,9 @@ export function Dashboard() {
   const [notifiedFilterEmployee, setNotifiedFilterEmployee] = useState("");
   const [notifiedFilterClient, setNotifiedFilterClient] = useState("");
   const [notifiedFilterDate, setNotifiedFilterDate] = useState("");
+  const [bookedSlotsEmployeeFilter, setBookedSlotsEmployeeFilter] = useState("Alle");
   const [slotToManuallyBook, setSlotToManuallyBook] = useState<any>(null);
+  const [returnToModalOnClose, setReturnToModalOnClose] = useState<string | null>(null);
 
   useEffect(() => {
     if (!businessId) return;
@@ -231,7 +292,7 @@ export function Dashboard() {
     return holiday ? (Array.isArray(holiday) ? holiday[0].name : holiday.name) : null;
   }, [business?.federalState]);
 
-  const reportedSlots = useMemo(() => effectiveSlots.filter(s => s.status === 'open' && s.notifiedClients?.length > 0), [effectiveSlots]);
+  const reportedSlots = useMemo(() => effectiveSlots.filter(s => s.status === 'open' && s.notifiedClients?.length > 0 && s.date >= todayString), [effectiveSlots, todayString]);
 
   const filteredReportedSlots = useMemo(() => {
     return reportedSlots.filter(s => {
@@ -321,7 +382,7 @@ export function Dashboard() {
             <div onClick={() => setIsBookedSlotsModalOpen(true)} className="cursor-pointer transition-transform hover:scale-[1.02] h-full">
               <StatCard 
                 title="Termine heute" 
-                value={futureBookedSlotsToday.length.toString().padStart(2, '0')} 
+                value={bookedSlotsToday.length.toString().padStart(2, '0')} 
                 icon={<CheckCircle className="h-5 w-5 text-accent" />}
                 className="bg-white dark:bg-slate-900 border-accent/20 h-full"
                 valueClassName="text-deep-blue dark:text-white leading-none"
@@ -511,6 +572,10 @@ export function Dashboard() {
           setIsModalOpen(false);
           setIsEditMode(false);
           setEditingSlotId(null);
+          if (returnToModalOnClose === "freeSlots") {
+            setIsFreeSlotsModalOpen(true);
+            setReturnToModalOnClose(null);
+          }
         }}
         business={business}
         slots={slots}
@@ -575,44 +640,70 @@ export function Dashboard() {
       >
         <div className="space-y-4">
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin">
-            {reportedSlotsToday.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">
-                <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-                  <Clock className="h-6 w-6 text-gray-400" />
-                </div>
-                <p className="font-bold text-gray-900 dark:text-white mb-1">Keine freien Plätze heute</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Melde neue freie Slots, um Kunden zu benachrichtigen.</p>
-              </div>
-            ) : (
-              reportedSlotsToday.map((slot) => (
-                <div key={slot.id} className="group relative bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl p-4 shadow-sm hover:shadow-md transition-all">
-                  <div className="flex justify-between items-start gap-3">
-                    <div className="flex gap-3 items-start">
-                      <div className="h-10 w-10 shrink-0 rounded-lg bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center text-orange-600 dark:text-orange-400">
-                        <Clock className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-bold text-deep-blue dark:text-white leading-tight mb-0.5">
-                          {slot.serviceType}
-                        </h4>
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                          <span className="flex items-center">
-                            <Clock className="h-3 w-3 mr-1" />
-                            {slot.time} Uhr
-                          </span>
-                          {slot.employeeName && (
-                            <span className="flex items-center">
-                              <Users className="h-3 w-3 mr-1" />
-                              {slot.employeeName}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+            {(() => {
+              const openSlotsDetails = futureTimeSlots.map(time => {
+                const bookedCount = futureBookedSlotsToday.filter(s => s.time === time).length;
+                const capacity = getCapacityForTime(time, todayString);
+                return { time, available: capacity - bookedCount };
+              }).filter(slot => slot.available > 0);
+
+              if (openSlotsDetails.length === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">
+                    <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                      <Clock className="h-6 w-6 text-gray-400" />
+                    </div>
+                    <p className="font-bold text-gray-900 dark:text-white mb-1">Keine freien Plätze heute</p>
+                  </div>
+                );
+              }
+
+              return openSlotsDetails.map((slot, idx) => (
+                <div key={`${slot.time}-${idx}`} className="group relative bg-white dark:bg-slate-800 border border-gray-100 dark:border-slate-700 rounded-xl p-4 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 shrink-0 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                      <Clock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-deep-blue dark:text-white leading-tight mb-0.5">
+                        {slot.time} Uhr
+                      </h4>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded-full mb-1">
+                      {slot.available} Platz {slot.available > 1 ? 'frei' : 'frei'}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => {
+                          setNewSlotTime(slot.time);
+                          setIsCreateFreeSlotModalOpen(true);
+                          setIsFreeSlotsModalOpen(false);
+                        }}
+                        className="h-8 px-3 text-[10px] sm:text-xs font-bold text-accent border-accent/20 hover:bg-accent hover:text-white"
+                      >
+                        Melden
+                      </Button>
+                      <Button 
+                        size="sm"
+                        onClick={() => {
+                          setNewSlotTime(slot.time);
+                          setReturnToModalOnClose("freeSlots");
+                          setIsModalOpen(true);
+                          setIsFreeSlotsModalOpen(false);
+                        }}
+                        className="h-8 px-3 text-[10px] sm:text-xs font-bold bg-deep-blue text-white hover:bg-indigo-900 border-none"
+                      >
+                        Eintragen
+                      </Button>
                     </div>
                   </div>
                 </div>
-              ))
-            )}
+              ));
+            })()}
           </div>
         </div>
       </Modal>
@@ -624,9 +715,23 @@ export function Dashboard() {
         headerClassName="bg-accent"
       >
         <div className="space-y-4">
+          {business?.employees && business.employees.length > 0 && (
+            <div className="mb-4">
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter Filter</label>
+              <CustomEmployeeSelect
+                employees={business.employees}
+                value={bookedSlotsEmployeeFilter}
+                onChange={setBookedSlotsEmployeeFilter}
+              />
+            </div>
+          )}
           <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 scrollbar-thin">
-            {futureTimeSlots.map(time => {
-              const bookedSlots = slotsToday.filter(s => s.time === time && s.status === 'booked');
+            {timeSlots.map(time => {
+              const bookedSlots = slotsToday.filter(s => {
+                if (s.time !== time || s.status !== 'booked') return false;
+                if (bookedSlotsEmployeeFilter !== "Alle" && s.employeeId !== bookedSlotsEmployeeFilter) return false;
+                return true;
+              });
               if (bookedSlots.length === 0) return null;
 
               return (
@@ -652,6 +757,30 @@ export function Dashboard() {
                 </div>
               );
             })}
+            
+            {(() => {
+              const hasDisplayedSlots = timeSlots.some(time => {
+                const bookedSlots = slotsToday.filter(s => {
+                  if (s.time !== time || s.status !== 'booked') return false;
+                  if (bookedSlotsEmployeeFilter !== "Alle" && s.employeeId !== bookedSlotsEmployeeFilter) return false;
+                  return true;
+                });
+                return bookedSlots.length > 0;
+              });
+
+              if (!hasDisplayedSlots) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">
+                    <div className="h-12 w-12 rounded-full bg-gray-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+                      <Calendar className="h-6 w-6 text-gray-400" />
+                    </div>
+                    <p className="font-bold text-gray-900 dark:text-white mb-1">Keine Termine gefunden</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Für die gewählten Filter stehen heute keine gebuchten Termine an.</p>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
         </div>
       </Modal>

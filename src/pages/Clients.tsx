@@ -535,7 +535,8 @@ export function Clients() {
                 
                 const notifiedSlots = slots.filter(s => 
                   s.status === 'open' && 
-                  s.notifiedClients?.includes(client.id)
+                  s.notifiedClients?.includes(client.id) &&
+                  (s.date > nowString || (s.date === nowString && s.time >= nowTime))
                 );
                 const isNotified = notifiedSlots.length > 0;
                 return (

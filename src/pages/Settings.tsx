@@ -1,4 +1,5 @@
 import { useState, useEffect, FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { doc, onSnapshot, updateDoc, getDocs, collection, writeBatch, deleteDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { deleteUser } from "firebase/auth";
@@ -8,13 +9,25 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Modal } from "../components/ui/modal";
 import { format } from "date-fns";
-import { Plus, X, MessageSquare, Save, CheckCircle2, Edit2, Trash2, AlertTriangle, ChevronDown, Sun, Moon, Settings as SettingsIcon } from "lucide-react";
+import { Plus, X, MessageSquare, Save, CheckCircle2, Edit2, Trash2, AlertTriangle, ChevronDown, Sun, Moon, Settings as SettingsIcon, Search } from "lucide-react";
 import { cn } from "../lib/utils";
 
 export function Settings() {
-  const { businessId } = useAuth();
+  const { businessId, user } = useAuth();
   const { theme, setTheme } = useTheme();
+  const navigate = useNavigate();
   const [business, setBusiness] = useState<any>(null);
+
+  useEffect(() => {
+    if (business && user) {
+                              const isAdmin = (user.uid === businessId) || (business.adminEmails && business.adminEmails.some((admin: any) => 
+                                (typeof admin === 'string' ? admin === user.email : admin.email === user.email)
+                              ));
+      if (!isAdmin) {
+        navigate("/");
+      }
+    }
+  }, [business, user, businessId, navigate]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -74,6 +87,8 @@ export function Settings() {
   const [notificationExpiryMinutes, setNotificationExpiryMinutes] = useState("60");
 
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+  const [isDeleteAdminEmailModalOpen, setIsDeleteAdminEmailModalOpen] = useState(false);
+  const [adminEmailToDelete, setAdminEmailToDelete] = useState<string | null>(null);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [employeeName, setEmployeeName] = useState("");
   const [employeePhone, setEmployeePhone] = useState("");
@@ -96,6 +111,13 @@ export function Settings() {
   const [employeeServiceSearch, setEmployeeServiceSearch] = useState("");
 
   const [confirmDeleteCustomEmployeeIndex, setConfirmDeleteCustomEmployeeIndex] = useState<number | null>(null);
+  const [adminEmails, setAdminEmails] = useState<any[]>([]);
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  const [newAdminName, setNewAdminName] = useState("");
+  const [adminSearch, setAdminSearch] = useState("");
+  const [editingAdminEmail, setEditingAdminEmail] = useState<string | null>(null);
+  const [editAdminName, setEditAdminName] = useState("");
+  const [editAdminEmail, setEditAdminEmail] = useState("");
 
   const renderCustomEmployeeServicesList = () => {
     const addService = () => {
@@ -322,6 +344,7 @@ export function Settings() {
           setFederalState(data.federalState || "");
           setAppointmentStatusDelay(data.appointmentStatusDelay || "0");
           setDashboardEmployeeFocus(data.dashboardEmployeeFocus || "all");
+          setAdminEmails(data.adminEmails || []);
           setIsInitialized(true);
         } else {
           // Keep services in sync since they can be added/removed directly
@@ -478,6 +501,19 @@ export function Settings() {
     setAbsenceToDelete(null);
     if (businessId) {
       await updateDoc(doc(db, "businesses", businessId), { absences: updatedAbsences });
+    }
+  };
+
+  const handleDeleteService = async () => {
+    if (!serviceToDelete || !businessId) return;
+    const updatedServices = services.filter((s) => s !== serviceToDelete);
+    setServices(updatedServices);
+    setIsDeleteServiceModalOpen(false);
+    
+    try {
+      await updateDoc(doc(db, "businesses", businessId), { services: updatedServices });
+    } catch (error) {
+      console.error("Error deleting service", error);
     }
   };
 
@@ -653,7 +689,7 @@ export function Settings() {
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
               {[...services]
                 .sort((a, b) => a.localeCompare(b))
-                .filter(s => s.toLowerCase().includes(serviceSearch.toLowerCase()))
+                .filter(s => s.toLowerCase().startsWith(serviceSearch.toLowerCase()))
                 .map((service) => (
                 <div key={service} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700">
                   {editingService === service ? (
@@ -716,7 +752,7 @@ export function Settings() {
             <div className="space-y-2 mb-4 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
               {[...employees]
                 .sort((a, b) => a.name.localeCompare(b))
-                .filter(emp => emp.name.toLowerCase().includes(employeeSearch.toLowerCase()))
+                .filter(emp => emp.name.toLowerCase().startsWith(employeeSearch.toLowerCase()))
                 .map((emp) => (
                 <div key={emp.id} className="flex items-center justify-between bg-gray-50 dark:bg-slate-800 px-4 py-3 rounded-lg border border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700" onClick={() => handleEditEmployee(emp)}>
                   <div className="flex flex-col">
@@ -813,10 +849,10 @@ export function Settings() {
                   const emp = employees.find(e => e.id === abs.employeeId);
                   const searchLower = absenceSearch.toLowerCase();
                   return (
-                    emp?.name.toLowerCase().includes(searchLower) ||
-                    abs.type.toLowerCase().includes(searchLower) ||
-                    abs.startDate.includes(searchLower) ||
-                    abs.endDate.includes(searchLower)
+                    emp?.name.toLowerCase().startsWith(searchLower) ||
+                    abs.type.toLowerCase().startsWith(searchLower) ||
+                    abs.startDate.startsWith(searchLower) ||
+                    abs.endDate.startsWith(searchLower)
                   );
                 })
                 .map((abs) => {
@@ -1021,6 +1057,154 @@ export function Settings() {
             </div>
           </div>
 
+          {/* Admin Zugriff */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-100 dark:border-slate-800 p-6 mb-6">
+            <h3 className="text-xl font-bold text-deep-blue dark:text-white mb-6">Admin-Zugriff</h3>
+            <div className="space-y-4">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Administrator hinzufügen</label>
+                </div>
+                <div className="space-y-4 bg-gray-50/50 dark:bg-slate-800/30 p-4 rounded-xl border border-dashed border-gray-200 dark:border-slate-700">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">Name</label>
+                    <Input 
+                      value={newAdminName} 
+                      onChange={(e) => setNewAdminName(e.target.value)} 
+                      placeholder="Name des Admins" 
+                      className="bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase mb-1">E-Mail</label>
+                    <div className="flex gap-2">
+                      <Input 
+                        value={newAdminEmail} 
+                        onChange={(e) => setNewAdminEmail(e.target.value)} 
+                        placeholder="admin@firma.de" 
+                        className="bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white flex-1" 
+                      />
+                      <Button onClick={() => {
+                        if (newAdminEmail && newAdminName) {
+                          const updatedEmails = [...adminEmails, { email: newAdminEmail, name: newAdminName }];
+                          setAdminEmails(updatedEmails);
+                          setNewAdminEmail("");
+                          setNewAdminName("");
+                          updateBusiness({ adminEmails: updatedEmails });
+                        }
+                      }} className="bg-accent text-white font-bold">Hinzufügen</Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-gray-100 dark:border-slate-800">
+                <div className="flex items-center justify-between mb-4">
+                  <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase">Registrierte Admins</label>
+                  <span className="text-[10px] font-bold text-gray-400 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{adminEmails.length}</span>
+                </div>
+                
+                <div className="relative mb-4">
+                  <Input
+                    value={adminSearch}
+                    onChange={(e) => setAdminSearch(e.target.value)}
+                    placeholder="Admin suchen..."
+                    className="pl-8 h-9 text-sm bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700">
+                  {adminEmails
+                    .filter((admin: any) => {
+                      const name = typeof admin === 'string' ? "Unbekannter Mitarbeiter" : admin.name;
+                      return name.toLowerCase().startsWith(adminSearch.toLowerCase());
+                    })
+                    .map((admin: any) => {
+                      const email = typeof admin === 'string' ? admin : admin.email;
+                      const name = typeof admin === 'string' ? "Unbekannter Mitarbeiter" : admin.name;
+                      const isEditing = editingAdminEmail === email;
+
+                      return (
+                        <div key={email} className="flex flex-col p-3 rounded-lg bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 transition-all">
+                          {isEditing ? (
+                            <div className="space-y-3">
+                              <Input 
+                                value={editAdminName}
+                                onChange={(e) => setEditAdminName(e.target.value)}
+                                className="h-8 text-sm dark:bg-slate-900 border-accent/20"
+                                placeholder="Name"
+                              />
+                              <div className="flex gap-2">
+                                <Input 
+                                  value={editAdminEmail}
+                                  onChange={(e) => setEditAdminEmail(e.target.value)}
+                                  className="h-8 text-sm dark:bg-slate-900 border-accent/20 flex-1"
+                                  placeholder="E-Mail"
+                                />
+                                <div className="flex gap-1 shrink-0">
+                                  <button 
+                                    onClick={() => {
+                                      const updated = adminEmails.map(a => {
+                                        const curEmail = typeof a === 'string' ? a : a.email;
+                                        if (curEmail === email) return { name: editAdminName, email: editAdminEmail };
+                                        return a;
+                                      });
+                                      setAdminEmails(updated);
+                                      updateBusiness({ adminEmails: updated });
+                                      setEditingAdminEmail(null);
+                                    }}
+                                    className="p-1.5 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-md transition-colors"
+                                  >
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  </button>
+                                  <button 
+                                    onClick={() => setEditingAdminEmail(null)}
+                                    className="p-1.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-md transition-colors"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <div className="flex flex-col">
+                                  <span className="text-sm font-bold text-deep-blue dark:text-white leading-tight">{name}</span>
+                                  <span className="text-xs text-gray-500 leading-tight mt-0.5">{email}</span>
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <button 
+                                  onClick={() => {
+                                    setEditingAdminEmail(email);
+                                    setEditAdminName(name);
+                                    setEditAdminEmail(email);
+                                  }}
+                                  className="p-2 text-gray-400 hover:text-accent hover:bg-white dark:hover:bg-slate-700 rounded-md transition-all"
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </button>
+                                <button 
+                                  type="button"
+                                  onClick={() => {
+                                    setAdminEmailToDelete(email);
+                                    setIsDeleteAdminEmailModalOpen(true);
+                                  }} 
+                                  className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-all"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Twilio Verbindung */}
           <div className="bg-indigo-50 dark:bg-indigo-900/10 rounded-xl p-6 border border-indigo-100 dark:border-indigo-800">
             <div className="flex items-center gap-3 mb-6">
@@ -1161,6 +1345,270 @@ export function Settings() {
           <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-lg border border-red-100 dark:border-red-900/30 text-red-800 dark:text-red-400">
             <p className="text-sm font-bold">ACHTUNG: Diese Aktion ist endgültig!</p>
             <p className="text-xs mt-2">Alle Daten, Kunden, Termine und Einstellungen werden gelöscht. Dies kann nicht rückgängig gemacht werden.</p>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isEmployeeModalOpen} onClose={() => setIsEmployeeModalOpen(false)} title={editingEmployeeId ? "Mitarbeiter bearbeiten" : "Mitarbeiter anlegen"} footer={
+        <div className="flex flex-col sm:flex-row justify-end gap-3 w-full">
+          <Button variant="outline" className="flex-1 sm:flex-none dark:border-slate-700 dark:text-white" onClick={() => setIsEmployeeModalOpen(false)}>Abbrechen</Button>
+          <Button onClick={handleSaveEmployee} className="flex-1 sm:flex-none bg-accent hover:bg-accent-hover text-white font-bold">{editingEmployeeId ? "Speichern" : "Anlegen"}</Button>
+        </div>
+      }>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Name</label>
+            <Input value={employeeName} onChange={e => setEmployeeName(e.target.value)} placeholder="Max Mustermann" className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+          </div>
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Telefonnummer (Optional)</label>
+            <Input value={employeePhone} onChange={e => setEmployeePhone(e.target.value)} placeholder="+49 123 456789" className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-2">Angebotene Dienstleistungen</label>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500 mb-3 leading-tight">Wählen Sie aus, welche Dienstleistungen dieser Mitarbeiter durchführen kann.</p>
+            
+            <div className="border border-gray-200 dark:border-slate-700 rounded-md bg-white dark:bg-slate-800 flex flex-col">
+              <div className="p-2 border-b border-gray-100 dark:border-slate-700">
+                <Input
+                  placeholder="Dienstleistung suchen..."
+                  value={employeeServiceSearch}
+                  onChange={(e) => setEmployeeServiceSearch(e.target.value)}
+                  className="h-8 text-xs dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                />
+              </div>
+              <div className="overflow-y-auto p-2 flex flex-col gap-1 scrollbar-thin max-h-[200px]">
+                {[...services]
+                  .filter(s => s.toLowerCase().startsWith(employeeServiceSearch.toLowerCase()))
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((service: string) => (
+                  <label key={service} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={employeeServices.includes(service)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEmployeeServices([...employeeServices, service]);
+                        } else {
+                          setEmployeeServices(employeeServices.filter(s => s !== service));
+                        }
+                      }}
+                      className="accent-accent shrink-0"
+                    />
+                    <span className="truncate">{service}</span>
+                  </label>
+                ))}
+                {services.length === 0 && (
+                  <div className="text-center py-4 text-xs text-gray-500 dark:text-gray-400">
+                    Keine Dienstleistungen verfügbar. Legen Sie zuerst Dienstleistungen an.
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <label className="flex items-center gap-2 p-2 mt-2 rounded-lg bg-gray-50 dark:bg-slate-800 text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700">
+              <input
+                type="checkbox"
+                checked={isCustomEmployeeService}
+                onChange={() => setIsCustomEmployeeService(!isCustomEmployeeService)}
+                className="accent-accent shrink-0"
+              />
+              <span className="truncate">Individuell...</span>
+            </label>
+            {isCustomEmployeeService && renderCustomEmployeeServicesList()}
+          </div>
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mt-6 mb-2">Arbeitszeiten</label>
+            <div className="space-y-3">
+              {DAYS.map((day) => (
+                <div key={day.id} className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800 p-3 rounded-lg border border-gray-100 dark:border-slate-700 overflow-x-auto">
+                  <div className="w-24 shrink-0 font-medium text-sm text-deep-blue dark:text-white">{day.label}</div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmployeeHours({
+                          ...employeeHours,
+                          [day.id]: { ...employeeHours[day.id], closed: !employeeHours[day.id].closed }
+                        });
+                      }}
+                      className={cn(
+                        "w-12 h-6 rounded-full transition-colors relative shrink-0 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-1 dark:focus:ring-offset-slate-900",
+                        employeeHours[day.id]?.closed ? "bg-red-500" : "bg-green-500"
+                      )}
+                    >
+                      <div className={cn(
+                        "w-5 h-5 bg-white rounded-full absolute top-0.5 transition-transform",
+                        employeeHours[day.id]?.closed ? "left-0.5" : "translate-x-6 left-0.5"
+                      )} />
+                    </button>
+                    {!employeeHours[day.id]?.closed && (
+                      <div className="flex items-center gap-2 min-w-max">
+                        <Input
+                          type="time"
+                          value={employeeHours[day.id]?.open || "08:00"}
+                          onChange={(e) => setEmployeeHours({
+                            ...employeeHours,
+                            [day.id]: { ...employeeHours[day.id], open: e.target.value }
+                          })}
+                          className="w-24 h-8 text-sm bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                        />
+                        <span className="text-gray-400 dark:text-gray-500">-</span>
+                        <Input
+                          type="time"
+                          value={employeeHours[day.id]?.close || "18:00"}
+                          onChange={(e) => setEmployeeHours({
+                            ...employeeHours,
+                            [day.id]: { ...employeeHours[day.id], close: e.target.value }
+                          })}
+                          className="w-24 h-8 text-sm bg-white dark:bg-slate-900 dark:border-slate-700 dark:text-white"
+                        />
+                      </div>
+                    )}
+                    {employeeHours[day.id]?.closed && (
+                      <span className="text-sm font-bold text-red-500">Frei</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isAbsenceModalOpen} onClose={() => setIsAbsenceModalOpen(false)} title={editingAbsenceId ? "Abwesenheit bearbeiten" : "Abwesenheit eintragen"} footer={
+        <div className="flex flex-col sm:flex-row justify-end gap-3 w-full">
+          <Button variant="outline" className="flex-1 sm:flex-none dark:border-slate-700 dark:text-white" onClick={() => setIsAbsenceModalOpen(false)}>Abbrechen</Button>
+          <Button onClick={handleSaveAbsence} className="flex-1 sm:flex-none bg-accent hover:bg-accent-hover text-white font-bold">{editingAbsenceId ? "Speichern" : "Eintragen"}</Button>
+        </div>
+      }>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Mitarbeiter wählen</label>
+            <div className="bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+              <div className="p-2 border-b border-gray-200 dark:border-slate-700">
+                <div className="relative">
+                  <Input 
+                    value={absenceEmployeeSearch}
+                    onChange={(e) => setAbsenceEmployeeSearch(e.target.value)}
+                    placeholder="Mitarbeiter suchen..."
+                    className="pl-8 h-9 text-sm bg-white dark:bg-slate-900 border-gray-200 dark:border-slate-700 shadow-sm"
+                  />
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                </div>
+              </div>
+              <div className="max-h-[220px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-slate-700 py-1">
+                {employees.filter(emp => emp.name.toLowerCase().startsWith(absenceEmployeeSearch.toLowerCase())).map((emp) => (
+                  <div 
+                    key={emp.id}
+                    className={cn(
+                      "px-3 py-2 text-sm cursor-pointer transition-colors flex items-center justify-between group mx-1 rounded-lg mb-1",
+                      absenceData.employeeId === emp.id 
+                        ? "bg-accent text-white font-bold" 
+                        : "text-deep-blue dark:text-white hover:bg-white dark:hover:bg-slate-700 shadow-none hover:shadow-sm"
+                    )}
+                    onClick={() => {
+                      setAbsenceData({ ...absenceData, employeeId: emp.id });
+                    }}
+                  >
+                    <span className="line-clamp-1">{emp.name}</span>
+                    {absenceData.employeeId === emp.id && (
+                      <CheckCircle2 className="h-4 w-4 text-white shrink-0" />
+                    )}
+                  </div>
+                ))}
+                {employees.filter(emp => emp.name.toLowerCase().startsWith(absenceEmployeeSearch.toLowerCase())).length === 0 && (
+                  <div className="px-4 py-3 text-sm text-gray-500 text-center italic">Keine Mitarbeiter gefunden</div>
+                )}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Art der Abwesenheit</label>
+            <div className="relative">
+              <select 
+                value={absenceData.type}
+                onChange={(e) => setAbsenceData({ ...absenceData, type: e.target.value })}
+                className="flex h-10 w-full appearance-none rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="Urlaub">Urlaub</option>
+                <option value="Krankheit">Krankheit</option>
+                <option value="Sonstiges">Sonstiges</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Von (Datum)</label>
+              <Input type="date" value={absenceData.startDate} onChange={(e) => setAbsenceData({ ...absenceData, startDate: e.target.value })} className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm h-10" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Bis (Datum)</label>
+              <Input type="date" value={absenceData.endDate} onChange={(e) => setAbsenceData({ ...absenceData, endDate: e.target.value })} min={absenceData.startDate || undefined} className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white text-sm h-10" />
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isDeleteEmployeeModalOpen} onClose={() => setIsDeleteEmployeeModalOpen(false)} title="Mitarbeiter löschen" footer={
+        <div className="flex flex-col sm:flex-row gap-3 w-full">
+          <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteEmployeeModalOpen(false)}>Abbrechen</Button>
+          <Button className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" onClick={handleRemoveEmployee}>Endgültig löschen</Button>
+        </div>
+      }>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Möchten Sie den Mitarbeiter <span className="font-bold text-deep-blue dark:text-white">{employeeToDelete?.name}</span> wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isDeleteAdminEmailModalOpen} onClose={() => setIsDeleteAdminEmailModalOpen(false)} title="Admin-E-Mail löschen" footer={
+        <div className="flex flex-col sm:flex-row gap-3 w-full">
+          <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteAdminEmailModalOpen(false)}>Abbrechen</Button>
+          <Button className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" onClick={() => {
+            if (adminEmailToDelete) {
+                const updatedEmails = adminEmails.filter(admin => (typeof admin === 'string' ? admin !== adminEmailToDelete : admin.email !== adminEmailToDelete));
+                setAdminEmails(updatedEmails);
+                updateBusiness({ adminEmails: updatedEmails });
+                setIsDeleteAdminEmailModalOpen(false);
+                setAdminEmailToDelete(null);
+            }
+          }}>Endgültig löschen</Button>
+        </div>
+      }>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Möchten Sie die E-Mail-Adresse <span className="font-bold text-deep-blue dark:text-white">{adminEmailToDelete}</span> wirklich aus den Admin-Zugriffen entfernen?
+          </p>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isDeleteAbsenceModalOpen} onClose={() => setIsDeleteAbsenceModalOpen(false)} title="Abwesenheit löschen" footer={
+        <div className="flex flex-col sm:flex-row gap-3 w-full">
+          <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteAbsenceModalOpen(false)}>Abbrechen</Button>
+          <Button className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" onClick={handleRemoveAbsence}>Endgültig löschen</Button>
+        </div>
+      }>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Möchten Sie diese Abwesenheit wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal isOpen={isDeleteServiceModalOpen} onClose={() => setIsDeleteServiceModalOpen(false)} title="Dienstleistung löschen" footer={
+        <div className="flex flex-col sm:flex-row gap-3 w-full">
+          <Button variant="outline" className="flex-1 dark:border-slate-700 dark:text-white" onClick={() => setIsDeleteServiceModalOpen(false)}>Abbrechen</Button>
+          <Button className="flex-1 bg-red-500 text-white hover:bg-red-600 font-bold" onClick={handleDeleteService}>Endgültig löschen</Button>
+        </div>
+      }>
+        <div className="space-y-4">
+          <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-lg border border-red-100 dark:border-red-900/30 text-red-800 dark:text-red-400">
+            <p className="text-sm font-bold flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Achtung!</p>
+            <p className="text-xs mt-2">Möchten Sie die Dienstleistung "{serviceToDelete}" wirklich löschen? Alle Mitarbeiter, die diese Dienstleistung anbieten, werden aktualisiert. Diese Aktion kann nicht rückgängig gemacht werden.</p>
           </div>
         </div>
       </Modal>
