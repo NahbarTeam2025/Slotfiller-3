@@ -547,7 +547,7 @@ export function FreeSlots() {
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Uhrzeit</label>
               <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
                 value={newSlotTime}
                 onChange={(e) => setNewSlotTime(e.target.value)}
               >
@@ -559,7 +559,7 @@ export function FreeSlots() {
             <div>
               <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Service-Typ</label>
               <select 
-                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
                 value={newSlotService}
                 onChange={(e) => setNewSlotService(e.target.value)}
               >

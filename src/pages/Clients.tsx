@@ -486,7 +486,7 @@ export function Clients() {
             )}
           </div>
           <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-deep-blue dark:text-white"
             value={filterTime}
             onChange={(e) => setFilterTime(e.target.value)}
           >
@@ -496,7 +496,7 @@ export function Clients() {
             <option value="Abend">Abend</option>
           </select>
           <select 
-            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm dark:text-white"
+            className="h-10 rounded-md border border-gray-300 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-deep-blue dark:text-white"
             value={filterAppointment}
             onChange={(e) => setFilterAppointment(e.target.value)}
           >

@@ -307,7 +307,7 @@ export function FreeSlotModal({
                   id="stagger-time-select"
                   value={staggerTime}
                   onChange={(e) => setStaggerTime(e.target.value)}
-                  className="text-[10px] font-bold h-7 rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-0 px-2"
+                  className="text-[10px] font-bold h-7 rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-deep-blue dark:text-white p-0 px-2"
                 >
                   <option value="15">15 min</option>
                   <option value="30">30 min</option>

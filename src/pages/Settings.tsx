@@ -613,7 +613,7 @@ export function Settings() {
                   value={name} 
                   onChange={(e) => setName(e.target.value)}
                   onBlur={() => updateBusiness({ name })}
-                  className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                  className="bg-gray-50 dark:bg-slate-800 dark:border-slate-700 text-deep-blue dark:text-white"
                 />
               </div>
               
@@ -636,7 +636,7 @@ export function Settings() {
                             setOpeningHours(newHours);
                           }}
                           onBlur={() => updateBusiness({ openingHours })}
-                          className="h-8 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                          className="h-8 text-xs text-deep-blue dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                         />
                         <span className="text-gray-400">-</span>
                         <Input 
@@ -648,7 +648,7 @@ export function Settings() {
                             setOpeningHours(newHours);
                           }}
                           onBlur={() => updateBusiness({ openingHours })}
-                          className="h-8 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                          className="h-8 text-xs text-deep-blue dark:bg-slate-800 dark:border-slate-700 dark:text-white"
                         />
                       </div>
                       
@@ -814,7 +814,7 @@ export function Settings() {
           <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-slate-800">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie einen Mitarbeiter aus, dessen Termine standardmäßig auf dem Dashboard und im Kalender angezeigt werden sollen.</p>
             <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
               value={dashboardEmployeeFocus}
               onChange={(e) => {
                 setDashboardEmployeeFocus(e.target.value);
@@ -904,7 +904,7 @@ export function Settings() {
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">Taktung der Termine (Minuten)</label>
                 <select 
-                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
                   value={slotInterval}
                   onChange={(e) => {
                     setSlotInterval(e.target.value);
@@ -923,7 +923,7 @@ export function Settings() {
                   Wie lange soll ein Termin in der Kundenliste noch als "Ja" angezeigt werden, nachdem die Uhrzeit bereits vergangen ist?
                 </p>
                 <select 
-                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
                   value={appointmentStatusDelay}
                   onChange={(e) => {
                     setAppointmentStatusDelay(e.target.value);
@@ -943,7 +943,7 @@ export function Settings() {
                   Wie viele Minuten vor dem Termin sollen Kunden, die benachrichtigt wurden, die Info erhalten, dass der Termin nicht mehr verfügbar ist?
                 </p>
                 <select 
-                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                  className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
                   value={notificationExpiryMinutes}
                   onChange={(e) => {
                     setNotificationExpiryMinutes(e.target.value);
@@ -965,7 +965,7 @@ export function Settings() {
             <h3 className="text-xs font-bold tracking-widest text-green-600 dark:text-green-400 uppercase mb-4">Feiertage</h3>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Wählen Sie Ihr Bundesland aus, um Feiertage automatisch im Kalender anzuzeigen.</p>
             <select 
-              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+              className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
               value={federalState}
               onChange={(e) => {
                 setFederalState(e.target.value);
@@ -1276,7 +1276,7 @@ export function Settings() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Standardregion</label>
-                    <select className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent">
+                    <select className="flex h-10 w-full rounded-md border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent">
                       <option>Europa (West1)</option>
                       <option>US (East)</option>
                     </select>
@@ -1527,11 +1527,11 @@ export function Settings() {
           <div>
             <label className="block text-xs font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase mb-2">Art der Abwesenheit</label>
             <div className="relative">
-              <select 
-                value={absenceData.type}
-                onChange={(e) => setAbsenceData({ ...absenceData, type: e.target.value })}
-                className="flex h-10 w-full appearance-none rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
-              >
+                    <select 
+                      value={absenceData.type}
+                      onChange={(e) => setAbsenceData({ ...absenceData, type: e.target.value })}
+                      className="flex h-10 w-full appearance-none rounded-xl border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-deep-blue dark:text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
                 <option value="Urlaub">Urlaub</option>
                 <option value="Krankheit">Krankheit</option>
                 <option value="Sonstiges">Sonstiges</option>
